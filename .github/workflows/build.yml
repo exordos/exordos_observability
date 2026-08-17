@@ -1,0 +1,212 @@
+name: build
+
+on:
+  push:
+  pull_request:
+    types: [opened]
+
+env:
+  PACKER_VERSION: "1.9.2"
+  PYTHON_VERSION: "3.12"
+  CORE_ENDPOINT_URL: http://10.20.0.2:80/api/core
+  CORE_USERNAME: "admin"
+  CORE_PASSWORD: "admin"
+
+jobs:
+  Build:
+    runs-on: ubuntu-24.04
+    if: ${{ github.actor != 'dependabot[bot]' }}
+    steps:
+      - name: Setup packer
+        uses: hashicorp/setup-packer@main
+        with:
+          version: ${{ env.PACKER_VERSION }}
+
+      - name: Install exordos CLI
+        run: curl -fsSL https://repo.exordos.com/install.sh | sudo sh
+
+      - name: Install hypervisor
+        run: |
+          sudo exordos compute hypervisors init --connection-uri qemu+tcp://10.20.0.1/system
+          sudo chmod 666 /dev/kvm
+
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install uv + tox
+        uses: astral-sh/setup-uv@v7
+      - run: uv tool install tox --with tox-uv
+
+      - name: Build exordos_observability
+        timeout-minutes: 25
+        run: exordos build $(pwd)
+
+      - name: Configure exordos settings
+        run: |
+          exordos settings set-realm default --endpoint $CORE_ENDPOINT_URL
+          exordos settings set-context default --name default --user $CORE_USERNAME --password $CORE_PASSWORD
+
+      # `--pool-agent-placement` defaults to `core` (exordos CLI >= 2026-08-26),
+      # which runs the pool agent inside the core VM and expects to reach
+      # libvirt over qemu+tcp. On a GitHub runner nothing serves that, so no
+      # compute node ever gets created and every element stays IN_PROGRESS
+      # until the deploy times out. `local` runs a universal agent on the
+      # runner itself against the socket `hypervisors init` prepared (same as
+      # exordos_s3 / exordos_mail CI).
+      - name: Bootstrap exordos_core
+        timeout-minutes: 20
+        run: |
+          exordos bootstrap -i latest -f -m core --pool-agent-placement local \
+            --admin-password $CORE_PASSWORD --cidr 10.20.0.0/22
+
+      - name: Use bootstrapped local realm
+        run: exordos settings use-realm exordos-core
+
+      - name: Wait for Exordos Core API
+        run: |
+          for i in {1..60}; do
+            if exordos ready_api; then
+              echo "Exordos Core API is ready"
+              break
+            fi
+            echo "Waiting for Exordos Core API... ($i/60)"
+            sleep 5
+          done
+
+      # The runner is a single small VM: let the hypervisor overbook so the
+      # metapaas CP plus the victoria and grafana dataplanes all fit. The
+      # hypervisor registers with the freshly bootstrapped core asynchronously,
+      # so wait for it to show up first.
+      - name: Set hypervisor with overbooking
+        run: |
+          set -eux
+          for i in {1..60}; do
+            HYPER_UUID="$(exordos c h l -o json | jq -r '.[0].uuid // empty')"
+            [ -n "$HYPER_UUID" ] && break
+            echo "Waiting for hypervisor to register... ($i/60)"
+            sleep 5
+          done
+          test -n "$HYPER_UUID"
+          exordos compute hypervisors update "$HYPER_UUID" --cores-ratio 10.0 --ram-ratio 10.0
+
+      - name: Install requirements
+        run: sudo apt update && sudo apt install --yes libev-dev
+
+      # Local-realm deploy: the build output is served from the runner over an
+      # in-process HTTP server, registered as a dev repository in the core and
+      # installed from there; metapaas / victoriaaas / grafanaaas come in as
+      # dependencies.
+      #
+      # Timing observed on a GitHub runner: the metapaas CP image is pulled
+      # from repo.exordos.com and net-booted into its VM, which alone takes
+      # ~18 min; only then does the CP create the victoria/grafana DP nodes,
+      # and those VMs need a few more minutes to boot. So the budget must be
+      # well over 20 min, and a timeout must NOT be answered by re-running
+      # `deploy --force`: that uninstalls everything and starts the 18 min
+      # over. Instead, if the element is installed and still reconciling,
+      # keep waiting on it; only re-deploy when the element never got
+      # installed at all (transient core API error during repo sync).
+      # `ee l` itself 502s for seconds at a time while elements reconcile,
+      # so an unreadable status counts as "not ready yet", never as success.
+      - name: Deploy observability
+        timeout-minutes: 60
+        run: |
+          set -u
+          element_status() {
+            exordos ee l -o json -f name=observability 2>/dev/null \
+              | jq -r '.[0].status // empty' 2>/dev/null || true
+          }
+          wait_active() {  # $1 = seconds
+            local deadline=$((SECONDS + $1)) status last=""
+            while [ "$SECONDS" -lt "$deadline" ]; do
+              status="$(element_status)"
+              if [ "$status" != "$last" ]; then
+                echo "observability: ${status:-no status (API did not answer)}"
+                last="$status"
+              fi
+              case "$status" in
+                ACTIVE) return 0 ;;
+                ERROR)  exordos ee show observability; return 1 ;;
+              esac
+              sleep 10
+            done
+            echo "observability did not become ACTIVE in $1s (last: ${last:-unknown})" >&2
+            exordos ee show observability
+            return 1
+          }
+
+          for i in 1 2 3; do
+            # A fresh port per attempt: the CLI's pre-bind check has no
+            # SO_REUSEADDR, so the previous attempt's TIME_WAIT connections
+            # from the core make it refuse the port it just used.
+            if exordos deploy --element observability --timeout 1800 --force --port $((33100 + i)); then
+              exit 0
+            fi
+            status="$(element_status)"
+            if [ -n "$status" ] && [ "$status" != "ERROR" ]; then
+              echo "deploy timed out with observability in $status; waiting instead of re-deploying"
+              wait_active 900
+              exit $?
+            fi
+            echo "deploy attempt $i/3 failed (status: ${status:-not installed}), retrying in 15s..."
+            sleep 15
+          done
+          echo "deploy failed after 3 attempts" >&2
+          exit 1
+
+      - name: Run functional tests
+        env:
+          EXORDOS_ENDPOINT: ${{ env.CORE_ENDPOINT_URL }}
+          EXORDOS_USERNAME: ${{ env.CORE_USERNAME }}
+          EXORDOS_PASSWORD: ${{ env.CORE_PASSWORD }}
+          EXORDOS_POLL_TIMEOUT: "1800"
+        run: tox -e ${{ env.PYTHON_VERSION }}-functional
+
+      - name: Push exordos_observability
+        env:
+          PUSH_EXORDOS_CFG: ${{ secrets.PUSH_EXORDOS_CFG }}
+        run: |
+          echo "$PUSH_EXORDOS_CFG" | base64 -d > exordos/exordos.push.yaml
+          exordos push -c exordos/exordos.push.yaml -e output -t exordos_repo -f --latest
+
+      # The compute agent runs on this runner, so when a node will not come up
+      # the reason is in its journal, not in the core API.
+      - name: Collect diagnostics
+        if: failure()
+        run: |
+          set +e
+          echo "===== elements ====="
+          exordos ee list
+          for e in observability victoriaaas grafanaaas metapaas; do
+            exordos ee show "$e"
+          done
+          echo "===== compute nodes ====="
+          exordos cn list
+          echo "===== repositories ====="
+          exordos repo list
+          echo "===== agent processes ====="
+          ps -ef | grep -iE "agent|libvirtd|qemu-system" | grep -v grep
+          # `exordos compute hypervisors init` sets up a "local universal
+          # agent", whose unit is not named after exordos.
+          echo "===== agent journal ====="
+          sudo journalctl -u '*agent*' --no-pager -n 400
+          echo "===== libvirt journal ====="
+          sudo journalctl -u libvirtd --no-pager -n 100
+          echo "===== domains ====="
+          sudo virsh list --all
+          echo "===== disk / memory ====="
+          df -h /
+          free -m
+
+      - name: Debug session on failure
+        uses: owenthereal/action-upterm@v1
+        if: failure()
+        with:
+          limit-access-to-actor: true
+          wait-timeout-minutes: 30

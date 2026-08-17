@@ -1,0 +1,72 @@
+name: "victoriaaas"
+description: "VictoriaMetrics + VictoriaLogs storage PaaS for the metapaas control plane."
+schema_version: 1
+version: "{{ version }}"
+api_version: "v1"
+
+requirements:
+  core:
+    from_version: "0.0.0"
+  metapaas:
+    from_version: "1.2.0"
+
+resources:
+
+  # Register the victoria PaaS type in metapaas. The db-back core-agent
+  # (em_metapaas_types) reconciles this into the metapaas_paas_types table;
+  # the PluginReconciler then pip-installs the package at runtime.
+  $metapaas.types:
+    victoria:
+      name: "victoria"
+      element_name: "victoriaaas"
+      package: "{{ artifacts.pypi_package }}"
+      project_id: "4d657461-0000-0000-0000-000000000002"
+
+  # victoria IAM permissions bound to the metapaas project owner role.
+  $core.iam.permissions:
+    victoria_instance_create:
+      name: "exordos_observability.victoria_instance.create"
+    victoria_instance_read:
+      name: "exordos_observability.victoria_instance.read"
+    victoria_instance_update:
+      name: "exordos_observability.victoria_instance.update"
+    victoria_instance_delete:
+      name: "exordos_observability.victoria_instance.delete"
+    victoria_version_read:
+      name: "exordos_observability.victoria_version.read"
+
+  $core.iam.permissionbinding:
+    victoria_instance_create_binding:
+      role: "726f6c65-0000-0000-0000-000000000002"
+      permission: $core.iam.permissions.$victoria_instance_create:uuid
+      project_id: "4d657461-0000-0000-0000-000000000002"
+    victoria_instance_read_binding:
+      role: "726f6c65-0000-0000-0000-000000000002"
+      permission: $core.iam.permissions.$victoria_instance_read:uuid
+      project_id: "4d657461-0000-0000-0000-000000000002"
+    victoria_instance_update_binding:
+      role: "726f6c65-0000-0000-0000-000000000002"
+      permission: $core.iam.permissions.$victoria_instance_update:uuid
+      project_id: "4d657461-0000-0000-0000-000000000002"
+    victoria_instance_delete_binding:
+      role: "726f6c65-0000-0000-0000-000000000002"
+      permission: $core.iam.permissions.$victoria_instance_delete:uuid
+      project_id: "4d657461-0000-0000-0000-000000000002"
+    victoria_version_read_binding:
+      role: "726f6c65-0000-0000-0000-000000000002"
+      permission: $core.iam.permissions.$victoria_version_read:uuid
+      project_id: "4d657461-0000-0000-0000-000000000002"
+
+  # victoria dataplane version catalog entry. Lives in the victoriaaas
+  # element namespace so client manifests import it from $victoriaaas.
+  # `description` carries the EM project id for the core-agent version
+  # filter (em_victoriaaas_types_victoria_versions).
+  $victoriaaas.types.victoria.versions:
+    v1:
+      name: "vm-1.148.0_vl-1.52.0"
+      description: "12345678-c625-4fee-81d5-f691897b8142"
+      image: "{{ images.exordos_metapaas_victoria_dp }}"
+
+exports:
+  v1:
+    link: "$victoriaaas.types.victoria.versions.$v1"
