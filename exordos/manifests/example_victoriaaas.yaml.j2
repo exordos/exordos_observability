@@ -1,0 +1,43 @@
+name: "example_victoriaaas"
+description: "Example Victoria storages cluster: 1 Victoria instance (metrics+logs)."
+schema_version: 1
+version: "{{ version }}"
+api_version: "v1"
+
+requirements:
+  core:
+    from_version: "0.0.0"
+  victoriaaas:
+    from_version: "0.0.0"
+
+resources:
+
+  $victoriaaas.types.victoria.instances:
+    example_victoria:
+      name: "example-victoria"
+      project_id: "12345678-c625-4fee-81d5-f691897b8142"
+      cpu: $example_victoriaaas.imports.$var_default_cores:value
+      ram: $example_victoriaaas.imports.$var_default_ram:value
+      metrics_disk_size: 20
+      logs_disk_size: 20
+      retention_period: "7d"
+      replicas: 1
+      version_ref: $example_victoriaaas.imports.$victoria_v1:version_ref
+
+imports:
+  victoria_v1:
+    element: "$victoriaaas"
+    kind: "resource"
+    link: "$victoriaaas.types.victoria.versions.$v1"
+  var_default_cores:
+    element: "$core"
+    kind: "resource"
+    link: "$core.vs.variables.$default_cores"
+  var_default_ram:
+    element: "$core"
+    kind: "resource"
+    link: "$core.vs.variables.$default_ram"
+
+exports:
+  victoria_instance:
+    link: "$victoriaaas.types.victoria.instances.$example_victoria"

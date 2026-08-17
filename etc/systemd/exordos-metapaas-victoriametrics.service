@@ -1,0 +1,27 @@
+[Unit]
+Description=Exordos MetaPaaS VictoriaMetrics (single-node)
+After=network-online.target
+Wants=network-online.target
+ConditionPathExists=/etc/exordos_metapaas/victoria.env
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/exordos_metapaas/victoria.env
+ExecStart=/usr/bin/victoria-metrics \
+    -retentionPeriod=${VM_RETENTION_PERIOD} \
+    -storageDataPath=${VM_STORAGE_DATA_PATH} \
+    -httpListenAddr=${VM_HTTP_LISTEN_ADDR}
+Restart=always
+RestartSec=10s
+TimeoutStartSec=30s
+TimeoutStopSec=30s
+SendSIGKILL=no
+KillSignal=SIGTERM
+OOMScoreAdjust=-1000
+LimitNOFILE=1048576
+NoNewPrivileges=true
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

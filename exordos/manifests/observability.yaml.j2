@@ -1,0 +1,305 @@
+name: "observability"
+description: "Оbservability cluster: VictoriaMetrics storage + Grafana consumer, wired with Prometheus/VictoriaLogs datasources."
+schema_version: 1
+version: "{{ version }}"
+api_version: "v1"
+
+requirements:
+  core:
+    from_version: "0.0.0"
+  victoriaaas:
+    from_version: "0.0.0"
+  grafanaaas:
+    from_version: "0.0.0"
+
+resources:
+
+  # Profile-backed default disk sizes for the observability Victoria instance.
+  # The values are selected per active core profile (develop/small/medium/
+  # large/legacy), mirroring the default_cores/default_ram pattern from
+  # core.yaml.j2. The profiles themselves are imported from core (see the
+  # profile_* imports below).
+  $core.vs.variables:
+    metrics_disk_size:
+      name: "metrics_disk_size"
+      project_id: "12345678-c625-4fee-81d5-f691897b8142"
+      setter:
+        kind: profile
+        element: null
+        fallback_strategy: ignore
+        profiles:
+          - profile: $observability.imports.$profile_develop:uuid
+            value: 10
+          - profile: $observability.imports.$profile_small:uuid
+            value: 20
+          - profile: $observability.imports.$profile_medium:uuid
+            value: 50
+          - profile: $observability.imports.$profile_large:uuid
+            value: 100
+          - profile: $observability.imports.$profile_legacy:uuid
+            value: 10
+    logs_disk_size:
+      name: "logs_disk_size"
+      project_id: "12345678-c625-4fee-81d5-f691897b8142"
+      setter:
+        kind: profile
+        element: null
+        fallback_strategy: ignore
+        profiles:
+          - profile: $observability.imports.$profile_develop:uuid
+            value: 10
+          - profile: $observability.imports.$profile_small:uuid
+            value: 20
+          - profile: $observability.imports.$profile_medium:uuid
+            value: 50
+          - profile: $observability.imports.$profile_large:uuid
+            value: 100
+          - profile: $observability.imports.$profile_legacy:uuid
+            value: 10
+
+    # Core API base URL and Grafana root URL, used in Grafana OIDC
+    # endpoint URLs. Declared as selector variables so they can be
+    # updated in one place without editing the manifest.
+    var_core_api_url:
+      name: "var_core_api_url"
+      project_id: "12345678-c625-4fee-81d5-f691897b8142"
+      setter:
+        kind: selector
+        selector_strategy: latest
+
+    var_grafana_root_url:
+      name: "var_grafana_root_url"
+      project_id: "12345678-c625-4fee-81d5-f691897b8142"
+      setter:
+        kind: selector
+        selector_strategy: latest
+
+  $victoriaaas.types.victoria.instances:
+    victoria:
+      name: "victoria"
+      project_id: "12345678-c625-4fee-81d5-f691897b8142"
+      cpu: $observability.imports.$var_default_cores:value
+      ram: $observability.imports.$var_default_ram:value
+      metrics_disk_size: $core.vs.variables.$metrics_disk_size:value
+      logs_disk_size: $core.vs.variables.$logs_disk_size:value
+      retention_period: "30d"
+      replicas: 1
+      vmauth:
+        kind: basic
+        username: "grafana-reader"
+        password: $core.secret.passwords.$vmauth_reader_password:value
+      version_ref: $observability.imports.$victoria_v1:version_ref
+
+  # Core API base URL used in Grafana OIDC endpoint URLs.
+  # Declared as a platform value + selector variable so it can be
+  # updated in one place without editing the manifest.
+  $core.vs.values:
+    core_api_url:
+      name: "Core API URL"
+      project_id: "12345678-c625-4fee-81d5-f691897b8142"
+      value: "http://core.local.genesis-core.tech"
+      variable: $core.vs.variables.$var_core_api_url:uuid
+
+    grafana_root_url:
+      name: "Grafana root URL"
+      project_id: "12345678-c625-4fee-81d5-f691897b8142"
+      value: "http://observability.local.genesis-core.tech"
+      variable: $core.vs.variables.$var_grafana_root_url:uuid
+
+  # Grafana OIDC client secret — generated and stored by the Core
+  # Secret Manager as a URL-safe base64 string (AUTO_URL_SAFE). The
+  # instance references the secret value via $core.secret.passwords.$...:value,
+  # so it is never hardcoded in the manifest.
+  $core.secret.passwords:
+    grafana_oidc_client_secret:
+      name: "grafana_oidc_client_secret"
+      description: "Grafana OIDC client secret"
+      project_id: "12345678-c625-4fee-81d5-f691897b8142"
+      method: "AUTO_URL_SAFE"
+      constructor:
+        kind: plain
+      default_length: 32
+
+    # vmauth Basic Auth password for the read-only grafana-reader user.
+    # Referenced by both the Victoria instance (delivered into vmauth.yaml)
+    # and the Grafana datasources (delivered into provisioning YAML).
+    vmauth_reader_password:
+      name: "vmauth_reader_password"
+      description: "vmauth Basic Auth password for Grafana reader"
+      project_id: "12345678-c625-4fee-81d5-f691897b8142"
+      method: "AUTO_URL_SAFE"
+      constructor:
+        kind: plain
+      default_length: 32
+
+  # Dedicated IAM client for Grafana OIDC authentication.
+  # Uses the platform-wide default HS256 signing secret (seeded via SQL
+  # migration, uuid 00000000-0000-0000-0000-000000000001).
+  $core.iam.clients:
+    grafana_oidc:
+      name: "Grafana OIDC Client"
+      description: "IAM client for Grafana OIDC authentication"
+      client_id: "grafana-oidc"
+      project_id: "12345678-c625-4fee-81d5-f691897b8142"
+      secret: $core.secret.passwords.$grafana_oidc_client_secret:value
+      signature_algorithm:
+        kind: HS256
+        secret_uuid: "00000000-0000-0000-0000-000000000001"
+        previous_secret_uuid: null
+
+  # OIDC identity provider linked to the Grafana IAM client.
+  # The callback URL matches Grafana's generic OAuth callback path on
+  # the observability DNS name (declared below).
+  $core.iam.idp:
+    grafana_idp:
+      name: "Grafana OIDC Provider"
+      description: "OIDC provider for Grafana"
+      project_id: "12345678-c625-4fee-81d5-f691897b8142"
+      iam_client: $core.iam.clients.$grafana_oidc:uuid
+      callback:
+        kind: callback_uri
+        callback: "http://observability.local.genesis-core.tech/login/generic_oauth"
+      # Grafana's generic OAuth provider does not send a nonce parameter in
+      # the authorization request, so the Idp must not require it.
+      nonce_required: false
+      scope: "openid profile email"
+
+  $grafanaaas.types.grafana.instances:
+    grafana:
+      name: "grafana"
+      project_id: "12345678-c625-4fee-81d5-f691897b8142"
+      cpu: $observability.imports.$var_default_cores:value
+      ram: $observability.imports.$var_default_ram:value
+      root_disk_size: 20
+      replicas: 1
+      auth:
+        kind: oidc
+        client_id: $core.iam.clients.$grafana_oidc:client_id
+        client_secret: $core.secret.passwords.$grafana_oidc_client_secret:value
+        auth_url: f"{$core.vs.variables.$var_core_api_url:value}/api/core/v1/iam/idp/{$core.iam.idp.$grafana_idp:uuid}/actions/authorize/invoke"
+        token_url: f"{$core.vs.variables.$var_core_api_url:value}/api/core/v1/iam/clients/{$core.iam.clients.$grafana_oidc:uuid}/actions/get_token/invoke"
+        api_url: f"{$core.vs.variables.$var_core_api_url:value}/api/core/v1/iam/clients/{$core.iam.clients.$grafana_oidc:uuid}/actions/userinfo"
+        root_url: $core.vs.variables.$var_grafana_root_url:value
+        scopes: "openid profile email"
+      version_ref: $observability.imports.$grafana_v13:version_ref
+
+  # Pre-packaged dashboard artifacts shipped with the observability element.
+  # The node-exporter-full dashboard (#1860 from grafana.com) provides
+  # host-level CPU/memory/disk/network metrics for the node_exporter.
+  $grafanaaas.types.grafana.dashboards:
+    node_exporter_full:
+      name: "node-exporter-full"
+      project_id: "12345678-c625-4fee-81d5-f691897b8142"
+      source:
+        kind: bundled
+        dashboard_id: 1860
+        revision: 31
+
+  # Wire the Grafana instance's datasources at the shared Victoria
+  # instance's metrics/logs endpoints. Both instances are declared in this
+  # same manifest, so this is a plain intra-manifest field reference — no
+  # imports: entry is needed for it.
+  $grafanaaas.types.grafana.instances.$grafana.datasources:
+    victoria_metrics_ds:
+      name: "victoria-metrics"
+      project_id: "12345678-c625-4fee-81d5-f691897b8142"
+      instance: $grafanaaas.types.grafana.instances.$grafana:uuid
+      type: "prometheus"
+      url: $victoriaaas.types.victoria.instances.$victoria:metrics_endpoint
+      is_default: true
+      auth:
+        kind: basic
+        username: "grafana-reader"
+        password: $core.secret.passwords.$vmauth_reader_password:value
+    victoria_logs_ds:
+      name: "victoria-logs"
+      project_id: "12345678-c625-4fee-81d5-f691897b8142"
+      instance: $grafanaaas.types.grafana.instances.$grafana:uuid
+      type: "victoriametrics-logs-datasource"
+      url: $victoriaaas.types.victoria.instances.$victoria:logs_endpoint
+      is_default: false
+      auth:
+        kind: basic
+        username: "grafana-reader"
+        password: $core.secret.passwords.$vmauth_reader_password:value
+
+  # Bind the node-exporter-full dashboard artifact to the Grafana
+  # instance. The builder resolves the version_ref to fetch the dashboard
+  # JSON from the Grafana community catalog and provisions it on the DP.
+  $grafanaaas.types.grafana.instances.$grafana.dashboards:
+    node_exporter:
+      name: "node-exporter-full"
+      project_id: "12345678-c625-4fee-81d5-f691897b8142"
+      instance: $grafanaaas.types.grafana.instances.$grafana:uuid
+      folder: ""
+      version_ref: $grafanaaas.types.grafana.dashboards.$node_exporter_full:version_ref
+
+  # DNS records for the observability cluster, both pointing at the
+  # first node IP of their respective instances:
+  #   - observability.local.genesis-core.tech  -> Grafana UI
+  #   - victoria-storage.local.genesis-core.tech -> Victoria storage
+  $observability.imports.$core_local_domain.records:
+    observability:
+      domain: "$observability.imports.$core_local_domain:uuid"
+      project_id: "12345678-c625-4fee-81d5-f691897b8142"
+      type: "A"
+      record:
+        kind: "A"
+        name: "observability"
+        address: $grafanaaas.types.grafana.instances.$grafana:index(ipsv4, 0)
+    victoria_storage:
+      domain: "$observability.imports.$core_local_domain:uuid"
+      project_id: "12345678-c625-4fee-81d5-f691897b8142"
+      type: "A"
+      record:
+        kind: "A"
+        name: "victoria-storage"
+        address: $victoriaaas.types.victoria.instances.$victoria:index(ipsv4, 0)
+
+imports:
+  victoria_v1:
+    element: "$victoriaaas"
+    kind: "resource"
+    link: "$victoriaaas.types.victoria.versions.$v1"
+  grafana_v13:
+    element: "$grafanaaas"
+    kind: "resource"
+    link: "$grafanaaas.types.grafana.versions.$v13"
+  core_local_domain:
+    element: "$core"
+    kind: "resource"
+    link: "$core.dns.domains.$local_domain"
+  var_default_cores:
+    element: "$core"
+    kind: "resource"
+    link: "$core.vs.variables.$default_cores"
+  var_default_ram:
+    element: "$core"
+    kind: "resource"
+    link: "$core.vs.variables.$default_ram"
+  profile_develop:
+    element: "$core"
+    kind: "resource"
+    link: "$core.vs.profiles.$develop"
+  profile_small:
+    element: "$core"
+    kind: "resource"
+    link: "$core.vs.profiles.$small"
+  profile_medium:
+    element: "$core"
+    kind: "resource"
+    link: "$core.vs.profiles.$medium"
+  profile_large:
+    element: "$core"
+    kind: "resource"
+    link: "$core.vs.profiles.$large"
+  profile_legacy:
+    element: "$core"
+    kind: "resource"
+    link: "$core.vs.profiles.$legacy"
+
+exports:
+  victoria_instance:
+    link: "$victoriaaas.types.victoria.instances.$victoria"
+  grafana_instance:
+    link: "$grafanaaas.types.grafana.instances.$grafana"
