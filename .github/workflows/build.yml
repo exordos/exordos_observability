@@ -1,0 +1,157 @@
+name: build
+
+on:
+  push:
+  pull_request:
+    types: [opened]
+
+env:
+  PACKER_VERSION: "1.9.2"
+  PYTHON_VERSION: "3.12"
+  CORE_ENDPOINT_URL: http://10.20.0.2:80/api/core
+  CORE_USERNAME: "admin"
+  CORE_PASSWORD: "admin"
+  PACKAGE_INDEX_URL: "http://10.20.0.1:8000/simple/"
+
+jobs:
+  Build:
+    runs-on: ubuntu-24.04
+    if: ${{ github.actor != 'dependabot[bot]' }}
+    steps:
+      - name: Setup packer
+        uses: hashicorp/setup-packer@main
+        with:
+          version: ${{ env.PACKER_VERSION }}
+
+      - name: Install exordos CLI
+        run: curl -fsSL https://repo.exordos.com/install.sh | sudo sh
+
+      - name: Install hypervisor
+        run: |
+          sudo exordos compute hypervisors init
+          sudo chmod 666 /dev/kvm
+
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install uv + tox + build
+        uses: astral-sh/setup-uv@v7
+      - run: |
+          uv tool install tox --with tox-uv
+          pip install build
+
+      - name: Build exordos_observability
+        timeout-minutes: 25
+        run: |
+          set -eux
+          exordos build $(pwd)
+          PACKAGE_DIR=/tmp/observability-wheel/simple/exordos-observability
+          mkdir -p "$PACKAGE_DIR"
+          python -m build --wheel --outdir "$PACKAGE_DIR"
+          WHEEL_NAME="$(basename "$(find "$PACKAGE_DIR" -maxdepth 1 -name '*.whl' -print -quit)")"
+          cat > "$PACKAGE_DIR/index.html" <<EOF
+          <!DOCTYPE html>
+          <html><body>
+          <a href="$WHEEL_NAME">$WHEEL_NAME</a>
+          </body></html>
+          EOF
+
+      - name: Configure exordos settings
+        run: |
+          exordos settings set-realm default --endpoint $CORE_ENDPOINT_URL
+          exordos settings set-context default --name default --user $CORE_USERNAME --password $CORE_PASSWORD
+
+      - name: Bootstrap exordos_core
+        run: exordos bootstrap -i latest -f -m core --admin-password $CORE_PASSWORD --cidr 10.20.0.0/22
+
+      - name: Use bootstrapped local realm
+        run: exordos settings use-realm exordos-core
+
+      - name: Wait for Exordos Core API
+        run: |
+          for i in {1..60}; do
+            if exordos ready_api; then
+              echo "Exordos Core API is ready"
+              break
+            fi
+            echo "Waiting for Exordos Core API... ($i/60)"
+            sleep 5
+          done
+
+      - name: Set hypervisor with overbooking
+        run: |
+          HYPER_UUID="$(exordos c h l -o json | jq -r .[0]."uuid")"
+          exordos compute hypervisors update $HYPER_UUID --cores-ratio 10.0 --ram-ratio 10.0
+
+      - name: Install requirements
+        run: sudo apt update && sudo apt install --yes libev-dev
+
+      - name: Deploy elements + wait
+        run: |
+          set -eux
+          for MF in \
+            output/exordos-elements/victoriaaas/*/manifests/victoriaaas.yaml \
+            output/exordos-elements/grafanaaas/*/manifests/grafanaaas.yaml; do
+            sed -i 's|index_url: ""|index_url: "'"$PACKAGE_INDEX_URL"'"|' "$MF"
+          done
+
+          python -m http.server 8000 \
+            --bind 0.0.0.0 \
+            --directory /tmp/observability-wheel \
+            >/tmp/observability-wheel.log 2>&1 &
+          WHEEL_SERVER_PID=$!
+          trap 'kill "$WHEEL_SERVER_PID"' EXIT
+
+          python exordos_observability/victoria/tests/functional/prepare_env.py \
+            --skip-build \
+            --no-http-server \
+            --endpoint $CORE_ENDPOINT_URL \
+            --username $CORE_USERNAME \
+            --password "$CORE_PASSWORD" \
+            --wait-timeout 600 \
+            2>&1 | tee /tmp/prepare_env.log
+
+          # Export env vars for subsequent steps. Non-secret values (CP URL,
+          # poll timeout) are parsed from the script's summary output;
+          # secrets come from the runner environment, not the log.
+          grep "^  export EXORDOS_OBSERVABILITY_CP_URL\|^  export EXORDOS_POLL_TIMEOUT" \
+            /tmp/prepare_env.log | sed 's/^  export //' >> $GITHUB_ENV
+          {
+            echo "EXORDOS_ENDPOINT=$CORE_ENDPOINT_URL"
+            echo "EXORDOS_USERNAME=$CORE_USERNAME"
+            echo "EXORDOS_PASSWORD=$CORE_PASSWORD"
+          } >> $GITHUB_ENV
+
+      - name: Wait for observability API
+        run: |
+          for i in {1..30}; do
+            CODE=$(curl -s -o /dev/null -w "%{http_code}" "${EXORDOS_OBSERVABILITY_CP_URL}/v1/" || true)
+            if echo "$CODE" | grep -qE "200|404"; then
+              echo "MetaPaaS user-api ready (HTTP $CODE)"; exit 0
+            fi
+            echo "Waiting ($i/30) for observability API… (got '$CODE')"; sleep 10
+          done
+          exit 1
+
+      - name: Run functional tests
+        run: tox -e ${{ env.PYTHON_VERSION }}-functional
+
+      - name: Push exordos_observability
+        env:
+          PUSH_EXORDOS_CFG: ${{ secrets.PUSH_EXORDOS_CFG }}
+        run: |
+          echo "$PUSH_EXORDOS_CFG" | base64 -d > exordos/exordos.push.yaml
+          exordos push -c exordos/exordos.push.yaml -e output -t exordos_repo -f --latest
+
+      - name: Debug session on failure
+        uses: owenthereal/action-upterm@v1
+        if: failure()
+        with:
+          limit-access-to-actor: true
+          wait-timeout-minutes: 30

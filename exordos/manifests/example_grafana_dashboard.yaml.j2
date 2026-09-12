@@ -1,0 +1,57 @@
+name: "grafana_dashboard"
+description: "Example consumer manifest that imports the shared Grafana instance and adds a custom dashboard."
+schema_version: 1
+version: "1.0.0"
+api_version: "v1"
+
+requirements:
+  core:
+    from_version: "0.0.0"
+  grafanaaas:
+    from_version: "0.0.0"
+  observability:
+    from_version: "0.0.0"
+
+resources:
+
+  $grafanaaas.types.grafana.dashboards:
+    example_custom_dashboard:
+      name: "example-custom-dashboard"
+      project_id: "12345678-c625-4fee-81d5-f691897b8142"
+      source:
+        kind: raw
+        content:
+          title: "Example Custom Dashboard"
+          uid: "example-custom-dashboard"
+          schemaVersion: 41
+          version: 1
+          refresh: "30s"
+          time:
+            from: "now-6h"
+            to: "now"
+          panels:
+            - id: 1
+              type: "stat"
+              title: "Available targets"
+              gridPos:
+                h: 8
+                w: 12
+                x: 0
+                y: 0
+              targets:
+                - refId: "A"
+                  expr: "sum(up)"
+
+  $grafana_dashboard.imports.$grafana_instance.dashboards:
+    example_custom_dashboard_binding:
+      name: "example-custom-dashboard"
+      project_id: "12345678-c625-4fee-81d5-f691897b8142"
+      instance: $grafana_dashboard.imports.$grafana_instance:uuid
+      folder: "Examples"
+      version_ref: $grafanaaas.types.grafana.dashboards.$example_custom_dashboard:version_ref
+
+imports:
+  grafana_instance:
+    element: "$observability"
+    kind: "resource"
+    link: "$grafanaaas.types.grafana.instances.$grafana"

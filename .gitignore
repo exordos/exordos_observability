@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+*.egg-info/
+output/
+.tox/
+dist/
+build/
+cover/
+.coverage.*
+.playwright-mcp/

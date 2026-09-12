@@ -1,0 +1,90 @@
+name: "example_observability"
+description: "Exordos example observability cluster: 1 Victoria (metrics+logs) storages instance + 1 Grafana consumer instance, wired together with Prometheus/VictoriaLogs datasources. Used as the functional-test fixture."
+schema_version: 1
+version: "{{ version }}"
+api_version: "v1"
+
+requirements:
+  core:
+    from_version: "0.0.0"
+  victoriaaas:
+    from_version: "0.0.0"
+  grafanaaas:
+    from_version: "0.0.0"
+
+resources:
+
+  $victoriaaas.types.victoria.instances:
+    example_victoria:
+      name: "example-victoria"
+      project_id: "12345678-c625-4fee-81d5-f691897b8142"
+      cpu: $example_observability.imports.$var_default_cores:value
+      ram: $example_observability.imports.$var_default_ram:value
+      metrics_disk_size: 20
+      logs_disk_size: 20
+      retention_period: "7d"
+      replicas: 1
+      version_ref: $example_observability.imports.$victoria_v1:version_ref
+
+  $core.secret.passwords:
+    example_grafana_admin_password:
+      name: "example_grafana_admin_password"
+      description: "Grafana admin password for the example observability cluster"
+      project_id: "12345678-c625-4fee-81d5-f691897b8142"
+      method: "AUTO_URL_SAFE"
+      constructor:
+        kind: plain
+      default_length: 32
+
+  $grafanaaas.types.grafana.instances:
+    example_grafana:
+      name: "example-grafana"
+      project_id: "12345678-c625-4fee-81d5-f691897b8142"
+      cpu: $example_observability.imports.$var_default_cores:value
+      ram: $example_observability.imports.$var_default_ram:value
+      root_disk_size: 20
+      replicas: 1
+      auth:
+        kind: password
+        password: $core.secret.passwords.$example_grafana_admin_password:value
+      version_ref: $example_observability.imports.$grafana_v13:version_ref
+
+  $grafanaaas.types.grafana.instances.$example_grafana.datasources:
+    victoria_metrics_ds:
+      name: "victoria-metrics"
+      project_id: "12345678-c625-4fee-81d5-f691897b8142"
+      instance: $grafanaaas.types.grafana.instances.$example_grafana:uuid
+      type: "prometheus"
+      url: $victoriaaas.types.victoria.instances.$example_victoria:metrics_endpoint
+      is_default: true
+    victoria_logs_ds:
+      name: "victoria-logs"
+      project_id: "12345678-c625-4fee-81d5-f691897b8142"
+      instance: $grafanaaas.types.grafana.instances.$example_grafana:uuid
+      type: "victoriametrics-logs-datasource"
+      url: $victoriaaas.types.victoria.instances.$example_victoria:logs_endpoint
+      is_default: false
+
+imports:
+  victoria_v1:
+    element: "$victoriaaas"
+    kind: "resource"
+    link: "$victoriaaas.types.victoria.versions.$v1"
+  grafana_v13:
+    element: "$grafanaaas"
+    kind: "resource"
+    link: "$grafanaaas.types.grafana.versions.$v13"
+  var_default_cores:
+    element: "$core"
+    kind: "resource"
+    link: "$core.vs.variables.$default_cores"
+  var_default_ram:
+    element: "$core"
+    kind: "resource"
+    link: "$core.vs.variables.$default_ram"
+
+exports:
+  victoria_instance:
+    link: "$victoriaaas.types.victoria.instances.$example_victoria"
+  grafana_instance:
+    link: "$grafanaaas.types.grafana.instances.$example_grafana"

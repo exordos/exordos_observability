@@ -1,0 +1,25 @@
+[Unit]
+Description=Exordos MetaPaaS vmauth (read-only reverse proxy for VictoriaMetrics/VictoriaLogs)
+After=network-online.target
+Wants=network-online.target
+ConditionPathExists=/etc/exordos_metapaas/vmauth.yaml
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/vmauth \
+    -auth.config=/etc/exordos_metapaas/vmauth.yaml \
+    -httpListenAddr=:8428
+Restart=always
+RestartSec=10s
+TimeoutStartSec=30s
+TimeoutStopSec=30s
+SendSIGKILL=no
+KillSignal=SIGTERM
+OOMScoreAdjust=-1000
+LimitNOFILE=1048576
+NoNewPrivileges=true
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
