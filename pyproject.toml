@@ -1,0 +1,110 @@
+[project]
+name = "exordos_observability"
+description = "Observability PaaS plugins (Victoria storages, Grafana consumer) for the Exordos MetaPaaS runtime"
+readme = "README.md"
+authors = [{name = "Genesis Corporation", email = "mail@gmelikov.ru"}]
+dynamic = ["version"]
+license = {text = "Apache-2.0"}
+requires-python = ">=3.10"
+dependencies = [
+    "oslo.config>=3.22.2,<10.0.0",
+    "restalchemy>=16.0.3,<17.0.0",
+    "gcl_iam>=1.0.3,<2.0.0",
+    "gcl_looper>=1.2.3,<2.0.0",
+    "gcl_sdk>=3.6.0,<4.0.0",
+    "exordos_metapaas>=1.2.0,<2.0.0",
+    "bazooka>=1.3.0,<2.0.0",
+    "requests>=2.28.0,<3.0.0",
+    "PyYAML>=6.0,<7.0",
+]
+
+[project.entry-points."exordos_metapaas_paas"]
+victoria = "exordos_observability.victoria.definition:VictoriaDefinition"
+grafana = "exordos_observability.grafana.definition:GrafanaDefinition"
+
+[project.entry-points."gcl_sdk_universal_agent"]
+VictoriaCapabilityDriver = "exordos_observability.victoria.dataplane.driver:VictoriaCapabilityDriver"
+GrafanaCapabilityDriver = "exordos_observability.grafana.dataplane.driver:GrafanaCapabilityDriver"
+
+[build-system]
+requires = ["setuptools>=75.3.3", "setuptools_scm>=8"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools_scm]
+
+[project.urls]
+homepage = "https://github.com/exordos/exordos_observability/"
+
+[project.optional-dependencies]
+dev = [
+    "tox>=4.0.0",
+    "tox-uv",
+    "pytest>=7.0.0",
+]
+test = [
+    "build>=1.0.0",
+    "coverage>=4.0",
+    "mock>=3.0.5,<4.0.0",
+    "pytest>=8.0.0,<9.0.0",
+    "pytest-timer>=1.0.0,<2.0.0",
+    "requests>=2.28.0,<3.0.0",
+    "exordos>=2.0.0,<3.0.0",
+]
+ruff = [
+    "ruff",
+]
+mypy = [
+    "mypy",
+]
+
+[tool.uv]
+package = true
+
+[tool.ruff]
+line-length = 88
+indent-width = 4
+target-version = "py310"
+exclude = [".venv", "build", "dist", "output", "__pycache__"]
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F"]
+fixable = ["ALL"]
+
+[tool.coverage.run]
+branch = true
+source = ["exordos_observability"]
+command_line = "-m pytest -s exordos_observability/victoria/tests/unit exordos_observability/grafana/tests/unit"
+omit = ["exordos_observability/*/tests/*", ".venv"]
+
+[tool.coverage.report]
+exclude_also = [
+    "def __repr__",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "@(abc\\.)?abstractmethod",
+]
+ignore_errors = true
+
+[tool.coverage.html]
+directory = "cover"
+
+[tool.coverage.xml]
+output = "cover/coverage.xml"
+
+[tool.mypy]
+files = ["exordos_observability"]
+python_version = "3.12"
+disallow_untyped_defs = true
+show_error_codes = true
+no_implicit_optional = true
+warn_return_any = false
+warn_unused_ignores = true
+ignore_missing_imports = true
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["exordos_observability*"]
+
+[tool.setuptools.package-data]
+"exordos_observability.victoria" = ["migrations/*.py"]
+"exordos_observability.grafana" = ["migrations/*.py"]

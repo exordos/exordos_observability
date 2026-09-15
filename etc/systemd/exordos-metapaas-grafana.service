@@ -1,0 +1,31 @@
+[Unit]
+Description=Exordos MetaPaaS Grafana
+After=network-online.target
+Wants=network-online.target
+ConditionPathExists=/etc/exordos_metapaas/grafana.env
+
+[Service]
+Type=simple
+User=grafana
+Group=grafana
+EnvironmentFile=/etc/exordos_metapaas/grafana.env
+ExecStart=/usr/sbin/grafana-server \
+    --homepath=/usr/share/grafana \
+    --config=/etc/grafana/grafana.ini \
+    --pidfile=/run/grafana/grafana-server.pid \
+    cfg:default.paths.data=/var/lib/grafana \
+    cfg:default.paths.logs=/var/log/grafana \
+    cfg:default.paths.plugins=/var/lib/grafana/plugins \
+    cfg:default.paths.provisioning=/etc/grafana/provisioning
+# Grafana reloads its file-based provisioning config (datasources,
+# dashboards) on SIGHUP without a full restart.
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=always
+RestartSec=10s
+TimeoutStartSec=30s
+TimeoutStopSec=30s
+RuntimeDirectory=grafana
+RuntimeDirectoryMode=0750
+
+[Install]
+WantedBy=multi-user.target

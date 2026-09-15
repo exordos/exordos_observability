@@ -1,0 +1,70 @@
+#    Copyright 2026 Genesis Corporation.
+#
+#    Licensed under the Apache License, Version 2.0 (the "License"); you may
+#    not use this file except in compliance with the License. You may obtain
+#    a copy of the License at
+#
+#         http://www.apache.org/licenses/LICENSE-2.0
+#
+#    Unless required by applicable law or agreed to in writing, software
+#    distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+#    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+#    License for the specific language governing permissions and limitations
+#    under the License.
+
+build:
+  deps:
+    - dst: /opt/exordos_metapaas
+      path:
+        src: ../../exordos_observability
+      exclude:
+        - .venv
+        - .tox
+        - output
+
+  elements:
+    # Communal shared observability cluster (1 Victoria instance + 1 Grafana
+    # instance + datasources) for platform-wide use.
+    - manifest: manifests/observability.yaml.j2
+
+    # Example consumer element: declaratively creates its own Victoria +
+    # Grafana instances + datasource, used as the functional-test fixture.
+    - manifest: manifests/example_observability.yaml.j2
+
+    # Example victoriaaas-only element: declaratively creates a single
+    # Victoria (metrics+logs) storage instance, no Grafana consumer.
+    - manifest: manifests/example_victoriaaas.yaml.j2
+
+    - manifest: manifests/example_grafana_dashboard.yaml.j2
+
+    # Victoria storages dataplane image (launched per victoria instance by
+    # the infra builder).
+    - manifest: manifests/victoriaaas.yaml.j2
+      artifacts:
+        - script: images/build_wheel.sh
+          name: pypi_package
+          artifacts:
+            - ../dist/*.whl
+      images:
+      - name: exordos-metapaas-victoria-dp
+        format: GEN_IMG_FORMAT=zst
+        profile: exordos_base
+        script: images/victoria_dp_install.sh
+        override:
+          disk_size: "6G"
+
+    # Grafana consumer dataplane image (launched per grafana instance by the
+    # infra builder).
+    - manifest: manifests/grafanaaas.yaml.j2
+      artifacts:
+        - script: images/build_wheel.sh
+          name: pypi_package
+          artifacts:
+            - ../dist/*.whl
+      images:
+      - name: exordos-metapaas-grafana-dp
+        format: GEN_IMG_FORMAT=zst
+        profile: exordos_base
+        script: images/grafana_dp_install.sh
+        override:
+          disk_size: "6G"

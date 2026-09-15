@@ -1,0 +1,144 @@
+name: "grafanaaas"
+description: "Grafana PaaS plugin: registers package, IAM permissions and dataplane version in the metapaas control plane."
+schema_version: 1
+version: "{{ version }}"
+api_version: "v1"
+
+requirements:
+  core:
+    from_version: "0.0.0"
+  metapaas:
+    from_version: "1.2.0"
+
+resources:
+
+  # Register the grafana PaaS type in metapaas. The db-back core-agent
+  # (em_metapaas_types) reconciles this into the metapaas_paas_types table;
+  # the PluginReconciler then pip-installs the package at runtime.
+  $metapaas.types:
+    grafana:
+      name: "grafana"
+      element_name: "grafanaaas"
+      package: "{{ artifacts.pypi_package }}"
+      project_id: "4d657461-0000-0000-0000-000000000002"
+
+  # grafana IAM permissions bound to the metapaas project owner role.
+  $core.iam.permissions:
+    grafana_instance_create:
+      name: "exordos_observability.grafana_instance.create"
+    grafana_instance_read:
+      name: "exordos_observability.grafana_instance.read"
+    grafana_instance_update:
+      name: "exordos_observability.grafana_instance.update"
+    grafana_instance_delete:
+      name: "exordos_observability.grafana_instance.delete"
+    datasource_create:
+      name: "exordos_observability.datasource.create"
+    datasource_read:
+      name: "exordos_observability.datasource.read"
+    datasource_update:
+      name: "exordos_observability.datasource.update"
+    datasource_delete:
+      name: "exordos_observability.datasource.delete"
+    grafana_dashboard_create:
+      name: "exordos_observability.grafana_dashboard.create"
+    grafana_dashboard_read:
+      name: "exordos_observability.grafana_dashboard.read"
+    grafana_dashboard_update:
+      name: "exordos_observability.grafana_dashboard.update"
+    grafana_dashboard_delete:
+      name: "exordos_observability.grafana_dashboard.delete"
+    grafana_artifact_dashboard_create:
+      name: "exordos_observability.grafana_artifact_dashboard.create"
+    grafana_artifact_dashboard_read:
+      name: "exordos_observability.grafana_artifact_dashboard.read"
+    grafana_artifact_dashboard_update:
+      name: "exordos_observability.grafana_artifact_dashboard.update"
+    grafana_artifact_dashboard_delete:
+      name: "exordos_observability.grafana_artifact_dashboard.delete"
+    grafana_version_read:
+      name: "exordos_observability.grafana_version.read"
+
+  $core.iam.permissionbinding:
+    grafana_instance_create_binding:
+      role: "726f6c65-0000-0000-0000-000000000002"
+      permission: $core.iam.permissions.$grafana_instance_create:uuid
+      project_id: "4d657461-0000-0000-0000-000000000002"
+    grafana_instance_read_binding:
+      role: "726f6c65-0000-0000-0000-000000000002"
+      permission: $core.iam.permissions.$grafana_instance_read:uuid
+      project_id: "4d657461-0000-0000-0000-000000000002"
+    grafana_instance_update_binding:
+      role: "726f6c65-0000-0000-0000-000000000002"
+      permission: $core.iam.permissions.$grafana_instance_update:uuid
+      project_id: "4d657461-0000-0000-0000-000000000002"
+    grafana_instance_delete_binding:
+      role: "726f6c65-0000-0000-0000-000000000002"
+      permission: $core.iam.permissions.$grafana_instance_delete:uuid
+      project_id: "4d657461-0000-0000-0000-000000000002"
+    datasource_create_binding:
+      role: "726f6c65-0000-0000-0000-000000000002"
+      permission: $core.iam.permissions.$datasource_create:uuid
+      project_id: "4d657461-0000-0000-0000-000000000002"
+    datasource_read_binding:
+      role: "726f6c65-0000-0000-0000-000000000002"
+      permission: $core.iam.permissions.$datasource_read:uuid
+      project_id: "4d657461-0000-0000-0000-000000000002"
+    datasource_update_binding:
+      role: "726f6c65-0000-0000-0000-000000000002"
+      permission: $core.iam.permissions.$datasource_update:uuid
+      project_id: "4d657461-0000-0000-0000-000000000002"
+    datasource_delete_binding:
+      role: "726f6c65-0000-0000-0000-000000000002"
+      permission: $core.iam.permissions.$datasource_delete:uuid
+      project_id: "4d657461-0000-0000-0000-000000000002"
+    grafana_dashboard_create_binding:
+      role: "726f6c65-0000-0000-0000-000000000002"
+      permission: $core.iam.permissions.$grafana_dashboard_create:uuid
+      project_id: "4d657461-0000-0000-0000-000000000002"
+    grafana_dashboard_read_binding:
+      role: "726f6c65-0000-0000-0000-000000000002"
+      permission: $core.iam.permissions.$grafana_dashboard_read:uuid
+      project_id: "4d657461-0000-0000-0000-000000000002"
+    grafana_dashboard_update_binding:
+      role: "726f6c65-0000-0000-0000-000000000002"
+      permission: $core.iam.permissions.$grafana_dashboard_update:uuid
+      project_id: "4d657461-0000-0000-0000-000000000002"
+    grafana_dashboard_delete_binding:
+      role: "726f6c65-0000-0000-0000-000000000002"
+      permission: $core.iam.permissions.$grafana_dashboard_delete:uuid
+      project_id: "4d657461-0000-0000-0000-000000000002"
+    grafana_artifact_dashboard_create_binding:
+      role: "726f6c65-0000-0000-0000-000000000002"
+      permission: $core.iam.permissions.$grafana_artifact_dashboard_create:uuid
+      project_id: "4d657461-0000-0000-0000-000000000002"
+    grafana_artifact_dashboard_read_binding:
+      role: "726f6c65-0000-0000-0000-000000000002"
+      permission: $core.iam.permissions.$grafana_artifact_dashboard_read:uuid
+      project_id: "4d657461-0000-0000-0000-000000000002"
+    grafana_artifact_dashboard_update_binding:
+      role: "726f6c65-0000-0000-0000-000000000002"
+      permission: $core.iam.permissions.$grafana_artifact_dashboard_update:uuid
+      project_id: "4d657461-0000-0000-0000-000000000002"
+    grafana_artifact_dashboard_delete_binding:
+      role: "726f6c65-0000-0000-0000-000000000002"
+      permission: $core.iam.permissions.$grafana_artifact_dashboard_delete:uuid
+      project_id: "4d657461-0000-0000-0000-000000000002"
+    grafana_version_read_binding:
+      role: "726f6c65-0000-0000-0000-000000000002"
+      permission: $core.iam.permissions.$grafana_version_read:uuid
+      project_id: "4d657461-0000-0000-0000-000000000002"
+
+  # grafana dataplane version catalog entry. Lives in the grafanaaas
+  # element namespace so client manifests import it from $grafanaaas.
+  # `description` carries the EM project id for the core-agent version
+  # filter (em_grafanaaas_types_grafana_versions).
+  $grafanaaas.types.grafana.versions:
+    v13:
+      name: "grafana-13.1.1"
+      description: "12345678-c625-4fee-81d5-f691897b8142"
+      image: "{{ images.exordos_metapaas_grafana_dp }}"
+
+exports:
+  v13:
+    link: "$grafanaaas.types.grafana.versions.$v13"
