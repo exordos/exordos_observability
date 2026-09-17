@@ -36,7 +36,8 @@ exordos_observability/
 │       ├── victoriaaas.yaml.j2       # registers victoria plugin type + IAM + version catalog
 │       ├── grafanaaas.yaml.j2        # same, for grafana
 │       ├── observability.yaml.j2   # 1 victoria instance + 1 grafana instance + datasources
-│       └── example_observability.yaml.j2    # functional-test fixture manifest
+│       ├── example_observability.yaml.j2    # functional-test fixture manifest
+│       └── nginx_dashboard.yaml.j2          # standalone consumer: NGINX dashboard on shared Grafana
 ├── etc/{exordos_metapaas/*.conf+logging.yaml, systemd/*.service}
 ├── exordos_observability/
 │   ├── victoria/   # slug=victoria, element_name=victoriaaas
@@ -95,7 +96,13 @@ Plain manifests (no plugin needed) that each create one Victoria instance + one 
 
 `observability.yaml.j2` additionally ships a default **Node Exporter Full** dashboard (Grafana catalog ID 1860, revision 31) via a `BundledDashboardSource` artifact (`node_exporter_full`) and a child dashboard binding (`node_exporter`) on the Grafana instance, referencing the artifact's `version_ref` via intra-manifest `$path:field` syntax.
 
-A separate, **proven-but-not-used** pattern exists for third-party manifests that want to attach resources to an instance owned by a *different* manifest (confirmed via `exordos/exordos/templates/platformizers/manifests/pgsql_communal/genesis/manifests/{{ project_name }}.yaml.j2` in the `exordos` CLI repo) — not needed for Phase 1, noted here for whoever builds self-service consumers of `observability` later.
+A separate pattern exists for third-party manifests that want to attach resources to an instance owned by a *different* manifest (confirmed via `exordos/exordos/templates/platformizers/manifests/pgsql_communal/genesis/manifests/{{ project_name }}.yaml.j2` in the `exordos` CLI repo). This is now exercised by the standalone consumer elements `example_grafana_dashboard.yaml.j2` and `nginx_dashboard.yaml.j2`, which `import` the shared `grafana_instance` from `observability` and bind a dashboard to it via `$<element>.imports.$grafana_instance.dashboards`.
+
+### `nginx_dashboard.yaml.j2` — standalone NGINX dashboard consumer
+
+A minimal standalone element that depends on `observability` and provisions the community **NGINX exporter** dashboard (grafana.com #12708, `bundled` source) onto the shared Grafana instance under the **Nginx** folder. It is manifest-only — no plugin, DP image, driver, or migration — because it reuses the already-registered `grafanaaas` plugin through the `observability` dependency.
+
+The element provides the **visualization only**; the `nginx_*` metrics it plots must already be in VictoriaMetrics. The platform's ingestion model is push-only (VictoriaMetrics does not scrape): the `eci_base` base image ships `vmagent`, which scrapes local exporters and `remote_write`s to the vmauth anonymous write endpoint (`http://<OBS_HOST>:8428/api/v1/write`). To get Nginx metrics flowing on a host — either by adding a scrape job to an existing base-image `vmagent`, or by installing `vmagent` on a bare host — see [HOWTO.md → "How to get Nginx metrics into the dashboard"](HOWTO.md#how-to-get-nginx-metrics-into-the-dashboard).
 
 ### IAM
 

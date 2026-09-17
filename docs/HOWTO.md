@@ -21,6 +21,7 @@ conventions, see [`AGENTS.md`](AGENTS.md).
 - [Dashboard source kinds](#dashboard-source-kinds)
 - [How to wire Victoria + Grafana together](#how-to-wire-victoria--grafana-together)
 - [How to reference resources from another manifest](#how-to-reference-resources-from-another-manifest)
+- [How to get Nginx metrics into the dashboard](#how-to-get-nginx-metrics-into-the-dashboard)
 
 ---
 
@@ -661,3 +662,253 @@ Two details that are easy to get wrong:
   resolver looks it up there.
 
 ---
+
+## How to get Nginx metrics into the dashboard
+
+The `nginx_dashboard` element (see `exordos/manifests/nginx_dashboard.yaml.j2`)
+only provides the **visualization** — the community NGINX exporter dashboard
+(grafana.com [#12708](https://grafana.com/grafana/dashboards/12708)) bound
+to the shared Grafana instance under the **Nginx** folder. For its panels to
+show anything, the `nginx_*` metrics (`nginx_up`, `nginx_connections_*`,
+`nginx_http_requests_total`) must already be present in VictoriaMetrics.
+
+This section covers getting those metrics from a machine running Nginx into
+the platform's VictoriaMetrics. The data path is:
+
+```
+nginx stub_status → nginx-prometheus-exporter (:9113) → vmagent (scrape)
+    → remote_write http://<OBS_HOST>:8428/api/v1/write (vmauth, anonymous write)
+    → VictoriaMetrics → Grafana (prometheus datasource)
+```
+
+VictoriaMetrics does **not** scrape on its own — everything is pushed to the
+vmauth write endpoint on port `8428`, which is open for anonymous writes
+(see the `unauthorized_user` block in the Victoria infra config). The agent
+that does the scraping and pushing is **vmagent**.
+
+> **`vlagent` is not needed here.** `vlagent` ships *logs* to VictoriaLogs;
+> the Nginx dashboard is metrics-only. Install `vlagent` separately only if
+> you also want to centralize this machine's logs.
+
+### Prerequisites
+
+- The `observability` element is deployed, so a VictoriaMetrics backend exists.
+- The machine can reach the VictoriaMetrics write endpoint. The backend host
+  is called `OBS_HOST` and defaults to the realm-internal DNS name
+  `victoria-storage.local.genesis-core.tech`:
+  - **Inside the realm** — that name resolves; the default works as-is.
+  - **Outside the realm** — the name will not resolve. Set `OBS_HOST` to a
+    reachable address of the Victoria DP node. The instance's
+    `metrics_endpoint` is `http://<ip>:8428`, so `OBS_HOST` is that `<ip>`
+    (or a DNS name that resolves to it).
+
+### Part A — the machine already runs the Exordos base image
+
+Nodes built from `eci_base` (`exordos-base`) already ship `vmagent`
+(`/usr/bin/vmagent`), `vlagent`, and `node_exporter`, with a scrape config
+template at `/etc/exordos_observability/vmagent_scrape.yml.tpl` and a
+`exordos-vmagent.service` unit that already remote-writes to `OBS_HOST:8428`.
+You only need to add a Nginx scrape job.
+
+1. Add the Nginx job to the **template** file
+   `/etc/exordos_observability/vmagent_scrape.yml.tpl` (append under
+   `scrape_configs:`):
+
+   ```yaml
+     - job_name: "nginx"
+       scrape_interval: 15s
+       static_configs:
+         - targets: ["127.0.0.1:9113"]
+           labels:
+             instance: "__HOSTNAME__"
+   ```
+
+   > **Edit the `.tpl`, not the rendered `vmagent_scrape.yml`.** The unit's
+   > `ExecStartPre` re-renders `vmagent_scrape.yml` from the `.tpl` on every
+   > start (`sed "s/__HOSTNAME__/$(hostname)/" …`), so any direct edit to the
+   > rendered file is lost on the next restart/reboot. The `instance:
+   > "__HOSTNAME__"` label matches the dashboard's
+   > `label_values(nginx_up, instance)` variable — same convention as the
+   > `node_exporter` job — so the node shows up in the dashboard's `$instance`
+   > dropdown.
+
+2. Continue with [Set up Nginx and the exporter](#set-up-nginx-and-the-exporter),
+   then [Apply and verify](#apply-and-verify).
+
+### Part B — the machine has no agent (bare host)
+
+Install `vmagent` from scratch, reusing the `eci_base` file layout.
+
+1. Install the `vmagent` binary (pinned to the version the base image uses):
+
+   ```bash
+   VM_VERSION="v1.131.0"
+   curl -fsSL -o /tmp/vmutils.tar.gz \
+     "https://github.com/VictoriaMetrics/VictoriaMetrics/releases/download/${VM_VERSION}/vmutils-linux-amd64-${VM_VERSION}.tar.gz"
+   tar -xzf /tmp/vmutils.tar.gz -C /tmp
+   sudo install -m 0755 /tmp/vmagent-prod /usr/bin/vmagent
+   ```
+
+2. Create the config directory and the backend host file
+   `/etc/exordos_observability/observability.conf`:
+
+   ```bash
+   sudo mkdir -p /etc/exordos_observability
+   ```
+
+   ```ini
+   # Observability backend host (VictoriaMetrics). Set to a reachable address.
+   # Inside the realm the default resolves; outside it, use the Victoria DP
+   # node IP/DNS from the instance's metrics_endpoint (http://<ip>:8428).
+   OBS_HOST=victoria-storage.local.genesis-core.tech
+   ```
+
+3. Create the scrape template `/etc/exordos_observability/vmagent_scrape.yml.tpl`
+   (Nginx only — add more jobs if you also want node metrics):
+
+   ```yaml
+   scrape_configs:
+     - job_name: "nginx"
+       scrape_interval: 15s
+       static_configs:
+         - targets: ["127.0.0.1:9113"]
+           labels:
+             instance: "__HOSTNAME__"
+   ```
+
+4. Create the systemd unit `/etc/systemd/system/exordos-vmagent.service`:
+
+   ```ini
+   [Unit]
+   Description=Exordos vmagent (VictoriaMetrics metrics agent)
+   After=network-online.target
+   Wants=network-online.target
+
+   [Service]
+   Type=simple
+   Environment=OBS_HOST=victoria-storage.local.genesis-core.tech
+   EnvironmentFile=-/etc/exordos_observability/observability.conf
+   ExecStartPre=/bin/sh -c 'sed "s/__HOSTNAME__/$(hostname)/" /etc/exordos_observability/vmagent_scrape.yml.tpl > /etc/exordos_observability/vmagent_scrape.yml'
+   ExecStart=/usr/bin/vmagent \
+       -promscrape.config=/etc/exordos_observability/vmagent_scrape.yml \
+       -remoteWrite.url=http://${OBS_HOST}:8428/api/v1/write \
+       -httpListenAddr=127.0.0.1:8430
+   Restart=on-failure
+   RestartSec=5s
+   TimeoutStopSec=10
+   NoNewPrivileges=true
+   ProtectHome=true
+   PrivateTmp=true
+
+   [Install]
+   WantedBy=multi-user.target
+   ```
+
+   > The base-image unit also waits for `OBS_HOST` to resolve before
+   > starting (`ExecStartPre=…/exordos-observability-wait-dns.sh`). It is
+   > omitted here — `Restart=on-failure` retries until DNS is up.
+
+5. Enable and start it:
+
+   ```bash
+   sudo systemctl daemon-reload
+   sudo systemctl enable --now exordos-vmagent
+   ```
+
+### Set up Nginx and the exporter
+
+These steps are the same for Part A and Part B.
+
+1. Enable the `stub_status` page on Nginx (localhost-only):
+
+   ```nginx
+   server {
+       listen 127.0.0.1:8080;
+       location /stub_status {
+           stub_status;
+           access_log off;
+           allow 127.0.0.1;
+           deny all;
+       }
+   }
+   ```
+
+   ```bash
+   sudo nginx -t && sudo systemctl reload nginx
+   curl -s http://127.0.0.1:8080/stub_status   # sanity check
+   ```
+
+2. Install `nginx-prometheus-exporter` (pinned version):
+
+   ```bash
+   NPE_VERSION="1.5.3"
+   curl -fsSL -o /tmp/npe.tar.gz \
+     "https://github.com/nginx/nginx-prometheus-exporter/releases/download/v${NPE_VERSION}/nginx-prometheus-exporter_${NPE_VERSION}_linux_amd64.tar.gz"
+   tar -xzf /tmp/npe.tar.gz -C /tmp
+   sudo install -m 0755 /tmp/nginx-prometheus-exporter \
+     /usr/bin/nginx-prometheus-exporter
+   ```
+
+3. Create the systemd unit `/etc/systemd/system/exordos-nginx-exporter.service`
+   (binds to localhost only, same posture as `node_exporter` on `:9100`):
+
+   ```ini
+   [Unit]
+   Description=NGINX Prometheus exporter
+   After=network-online.target nginx.service
+   Wants=network-online.target
+
+   [Service]
+   Type=simple
+   ExecStart=/usr/bin/nginx-prometheus-exporter \
+       -nginx.scrape-uri=http://127.0.0.1:8080/stub_status \
+       -web.listen-address=127.0.0.1:9113
+   Restart=on-failure
+   RestartSec=5s
+   NoNewPrivileges=true
+   ProtectHome=true
+   PrivateTmp=true
+
+   [Install]
+   WantedBy=multi-user.target
+   ```
+
+   ```bash
+   sudo systemctl daemon-reload
+   sudo systemctl enable --now exordos-nginx-exporter
+   curl -s http://127.0.0.1:9113/metrics | grep nginx_up   # sanity check
+   ```
+
+### Apply and verify
+
+1. (Re)start vmagent so it re-renders the scrape config and starts scraping
+   the exporter:
+
+   ```bash
+   sudo systemctl restart exordos-vmagent
+   ```
+
+2. Confirm the metrics landed in VictoriaMetrics. The query path on
+   `:8428` requires the `grafana-reader` Basic Auth user — anonymous
+   access is write-only, so an unauthenticated query returns `401` even
+   when ingestion works. The password is generated by the manifest and
+   stored in the Core Secret Manager as `vmauth_reader_password`:
+
+   ```bash
+   # Fetch the generated read password via the Core API:
+   curl -s -u "<core-admin>:<password>" \
+     "http://core.local.genesis-core.tech/api/core/v1/secret/passwords/?name=vmauth_reader_password"
+
+   curl -s -u "grafana-reader:<password>" \
+     "http://<OBS_HOST>:8428/api/v1/query?query=nginx_up"
+   ```
+
+   A non-empty result with your node's `instance` label means the pipeline is
+   working.
+
+3. Open Grafana → **Nginx** folder → the *NGINX exporter* dashboard, and pick
+   the node in the `$instance` dropdown.
+
+> **Note:** This is per-machine, host-local configuration. The scrape config
+> lives on the node and is rendered locally by the agent — it is not
+> delivered by the control plane.

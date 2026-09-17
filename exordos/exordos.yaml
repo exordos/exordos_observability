@@ -37,6 +37,13 @@ build:
 
     - manifest: manifests/example_grafana_dashboard.yaml.j2
 
+    # Standalone consumer element: provisions the community NGINX exporter
+    # dashboard (grafana.com #12708) onto the shared observability Grafana
+    # instance. Depends on the `observability` element (imports its Grafana
+    # instance); reuses the already-built grafanaaas plugin, so it needs no
+    # DP image or wheel artifact of its own.
+    - manifest: manifests/nginx_dashboard.yaml.j2
+
     # Victoria storages dataplane image (launched per victoria instance by
     # the infra builder).
     - manifest: manifests/victoriaaas.yaml.j2
