@@ -1,0 +1,48 @@
+name: "nginx_dashboard"
+description: "Standalone element: provisions the community NGINX exporter dashboard (grafana.com #12708) onto the shared observability Grafana instance."
+schema_version: 1
+version: "{{ version }}"
+api_version: "v1"
+
+requirements:
+  core:
+    from_version: "0.2.30"
+  grafanaaas:
+    from_version: "0.0.0"
+  observability:
+    from_version: "0.0.1"
+
+resources:
+
+  # Dashboard artifact sourced from the Grafana community catalog. This is
+  # the official dashboard for nginx-prometheus-exporter metrics
+  # (nginx_up, nginx_connections_*, nginx_http_requests_total), using the
+  # prometheus datasource and an $instance variable resolved via
+  # label_values(nginx_up, instance).
+  $grafanaaas.types.grafana.dashboards:
+    nginx:
+      name: "nginx"
+      project_id: "12345678-c625-4fee-81d5-f691897b8142"
+      source:
+        kind: bundled
+        dashboard_id: 12708
+        revision: 1
+
+  # Bind the artifact to the shared Grafana instance owned by the
+  # `observability` element. The nested collection is addressed through the
+  # import, not the original resource path (the imported resource is
+  # registered in the element engine under
+  # $nginx_dashboard.imports.$grafana_instance).
+  $nginx_dashboard.imports.$grafana_instance.dashboards:
+    nginx_binding:
+      name: "nginx"
+      project_id: "12345678-c625-4fee-81d5-f691897b8142"
+      instance: $nginx_dashboard.imports.$grafana_instance:uuid
+      folder: "Nginx"
+      version_ref: $grafanaaas.types.grafana.dashboards.$nginx:version_ref
+
+imports:
+  grafana_instance:
+    element: "$observability"
+    kind: "resource"
+    link: "$grafanaaas.types.grafana.instances.$grafana"
