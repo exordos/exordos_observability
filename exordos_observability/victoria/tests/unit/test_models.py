@@ -15,6 +15,7 @@
 import uuid as sys_uuid
 
 import pytest
+from gcl_sdk.agents.universal.dm import models as ua_models
 
 from exordos_observability.common.version_ref import (
     build_version_ref,
@@ -22,7 +23,9 @@ from exordos_observability.common.version_ref import (
     parse_image,
     parse_version_ref,
 )
-from exordos_observability.victoria.controlplane.dm import models
+from exordos_observability.victoria.controlplane.dm import auth, models
+from exordos_observability.victoria.controlplane.paas.dm import models as paas_models
+from exordos_observability.victoria.controlplane.paas.services import builder
 
 
 class _DiskShrinkProp:
@@ -115,6 +118,35 @@ class TestVictoriaInstance:
         assert "IN_PROGRESS" in values
         assert "ACTIVE" in values
         assert "ERROR" in values
+
+
+class TestVictoriaPaaSInstance:
+    def test_minimal_target_resource_is_ready_to_delete(self) -> None:
+        uid = sys_uuid.UUID("12345678-1234-1234-1234-123456789012")
+        resource = ua_models.TargetResource(
+            uuid=uid,
+            kind="victoria_instance",
+            value={"uuid": str(uid), "name": "i"},
+        )
+
+        assert builder.VictoriaInstanceBuilder().can_delete_instance_resource(resource)
+
+    def test_target_resource_excludes_control_plane_fields(self) -> None:
+        uid = sys_uuid.UUID("12345678-1234-1234-1234-123456789012")
+        inst = paas_models.VictoriaInstance(
+            uuid=uid,
+            name="i",
+            project_id=sys_uuid.UUID("12345678-c625-4fee-81d5-f691897b8142"),
+            cpu=1,
+            ram=512,
+            metrics_disk_size=8,
+            logs_disk_size=8,
+            replicas=1,
+            version_ref="x",
+            vmauth=auth.BasicAuth(username="user", password="secret"),
+        )
+
+        assert inst.to_ua_resource().value == {"uuid": str(uid), "name": "i"}
 
 
 class TestValidateUpdate:
