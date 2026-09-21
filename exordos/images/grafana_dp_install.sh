@@ -35,9 +35,25 @@ sudo apt install -y \
     libev-dev apt-transport-https software-properties-common wget gpg
 
 sudo mkdir -p /etc/apt/keyrings/
-# apt.grafana.com is blocked in some regions; fetch the key from keyserver instead
-gpg --keyserver keyserver.ubuntu.com --recv-keys B53AE77BADB630A683046005963FA27710458545
-gpg --export --armor B53AE77BADB630A683046005963FA27710458545 \
+# apt.grafana.com is blocked in some regions, and keyserver.ubuntu.com
+# intermittently answers "No data" — retry the keyserver, then fall back to
+# apt.grafana.com. The fingerprint check below guards both sources.
+GRAFANA_KEY_FPR="B53AE77BADB630A683046005963FA27710458545"
+for attempt in 1 2 3 4 5; do
+    if gpg --keyserver hkps://keyserver.ubuntu.com --recv-keys "$GRAFANA_KEY_FPR"; then
+        break
+    fi
+    if wget -q -O - https://apt.grafana.com/gpg.key | gpg --import; then
+        break
+    fi
+    if [ "$attempt" -eq 5 ]; then
+        echo "Failed to fetch the Grafana APT signing key" >&2
+        exit 1
+    fi
+    sleep $((attempt * 10))
+done
+gpg --list-keys --with-colons "$GRAFANA_KEY_FPR" | grep -q "^fpr:::::::::${GRAFANA_KEY_FPR}:"
+gpg --export --armor "$GRAFANA_KEY_FPR" \
     | sudo tee /etc/apt/keyrings/grafana.asc > /dev/null
 sudo chmod 644 /etc/apt/keyrings/grafana.asc
 # Use Yandex mirror for the Grafana APT repository
