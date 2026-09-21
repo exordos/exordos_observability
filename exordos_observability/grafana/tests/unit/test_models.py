@@ -15,6 +15,7 @@
 import uuid as sys_uuid
 
 import pytest
+from gcl_sdk.agents.universal.dm import models as ua_models
 
 from exordos_observability.common.version_ref import (
     build_version_ref,
@@ -23,6 +24,8 @@ from exordos_observability.common.version_ref import (
     parse_version_ref,
 )
 from exordos_observability.grafana.controlplane.dm import auth, models
+from exordos_observability.grafana.controlplane.paas.dm import models as paas_models
+from exordos_observability.grafana.controlplane.paas.services import builder
 
 
 class TestGrafanaVersion:
@@ -148,6 +151,33 @@ class TestGrafanaInstance:
                 version_ref="x",
                 auth=auth.PasswordAuth(password="x"),
             )
+
+
+class TestGrafanaPaaSInstance:
+    def test_minimal_target_resource_is_ready_to_delete(self) -> None:
+        uid = sys_uuid.UUID("12345678-1234-1234-1234-123456789012")
+        resource = ua_models.TargetResource(
+            uuid=uid,
+            kind="grafana_instance",
+            value={"uuid": str(uid), "name": "i"},
+        )
+
+        assert builder.GrafanaInstanceBuilder().can_delete_instance_resource(resource)
+
+    def test_target_resource_excludes_control_plane_fields(self) -> None:
+        uid = sys_uuid.UUID("12345678-1234-1234-1234-123456789012")
+        inst = paas_models.GrafanaInstance(
+            uuid=uid,
+            name="i",
+            project_id=sys_uuid.UUID("12345678-c625-4fee-81d5-f691897b8142"),
+            cpu=1,
+            ram=512,
+            root_disk_size=8,
+            version_ref="x",
+            auth=auth.PasswordAuth(password="secret"),
+        )
+
+        assert inst.to_ua_resource().value == {"uuid": str(uid), "name": "i"}
 
 
 class TestGrafanaDatasource:

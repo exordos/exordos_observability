@@ -21,7 +21,9 @@ from restalchemy.dm import filters as ra_filters
 from restalchemy.dm import models as ra_models
 from restalchemy.dm import properties
 from restalchemy.dm import types as ra_types
+from restalchemy.dm import types_dynamic
 
+from exordos_observability.grafana.controlplane.dm import auth as auth_kinds
 from exordos_observability.grafana.controlplane.dm import models
 
 
@@ -67,6 +69,20 @@ class GrafanaInstance(
     __derivative_model_map__ = {
         "grafana_instance_node": GrafanaInstanceNode,
     }
+
+    project_id = properties.property(
+        ra_types.UUID(), required=False, read_only=True
+    )
+    auth = properties.property(
+        types_dynamic.KindModelSelectorType(
+            types_dynamic.KindModelType(auth_kinds.PasswordAuth),
+            types_dynamic.KindModelType(auth_kinds.OidcAuth),
+        ),
+        required=False,
+    )
+    version_ref = properties.property(
+        ra_types.String(min_length=1, max_length=4096), required=False
+    )
 
     @classmethod
     def get_resource_kind(cls) -> str:
