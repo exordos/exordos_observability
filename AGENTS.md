@@ -53,7 +53,8 @@ tox -e mypy              # or: make typecheck
 # Functional tests — REQUIRES a live Exordos Core + MetaPaaS stand with the
 # `observability` element deployed. From a local build output that's just:
 #   exordos deploy --element observability --timeout 1800 --force
-# (local realm; see .github/workflows/build.yml for the full CI sequence).
+# (local realm). CI instead installs the pushed version on a fresh core —
+# see .github/workflows/build.yml for the full sequence.
 EXORDOS_ENDPOINT=... EXORDOS_USERNAME=... EXORDOS_PASSWORD=... \
 tox -e py312-functional  # or: make functional
 
