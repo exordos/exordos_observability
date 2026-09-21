@@ -28,43 +28,44 @@ BOOTSTRAP_PATH="/var/lib/exordos/bootstrap/scripts"
 SYSTEMD_SERVICE_DIR=/etc/systemd/system/
 
 
-# Install packages + Grafana from the official upstream APT repository
+# Install packages + Grafana from a pinned upstream .deb
 sudo apt update
 sudo apt dist-upgrade -y
-sudo apt install -y \
-    libev-dev apt-transport-https software-properties-common wget gpg
-
-sudo mkdir -p /etc/apt/keyrings/
-# apt.grafana.com is blocked in some regions, and keyserver.ubuntu.com
-# intermittently answers "No data" — retry the keyserver, then fall back to
-# apt.grafana.com. The fingerprint check below guards both sources.
-GRAFANA_KEY_FPR="B53AE77BADB630A683046005963FA27710458545"
-for attempt in 1 2 3 4 5; do
-    if gpg --keyserver hkps://keyserver.ubuntu.com --recv-keys "$GRAFANA_KEY_FPR"; then
-        break
-    fi
-    if wget -q -O - https://apt.grafana.com/gpg.key | gpg --import; then
-        break
-    fi
-    if [ "$attempt" -eq 5 ]; then
-        echo "Failed to fetch the Grafana APT signing key" >&2
-        exit 1
-    fi
-    sleep $((attempt * 10))
-done
-gpg --list-keys --with-colons "$GRAFANA_KEY_FPR" | grep -q "^fpr:::::::::${GRAFANA_KEY_FPR}:"
-gpg --export --armor "$GRAFANA_KEY_FPR" \
-    | sudo tee /etc/apt/keyrings/grafana.asc > /dev/null
-sudo chmod 644 /etc/apt/keyrings/grafana.asc
-# Use Yandex mirror for the Grafana APT repository
-echo "deb [signed-by=/etc/apt/keyrings/grafana.asc] https://mirror.yandex.ru/mirrors/packages.grafana.com/oss/deb stable main" \
-    | sudo tee /etc/apt/sources.list.d/grafana.list
-sudo apt update
+sudo apt install -y libev-dev wget
 
 # Pin the Grafana version so the DP image is reproducible and matches the
 # version catalog entry name in exordos/manifests/grafanaaas.yaml.j2.
+#
+# The .deb is fetched directly and checked against a pinned SHA-256 instead of
+# going through the Grafana APT repository: that needs the repo signing key,
+# and both of its sources are unreliable (apt.grafana.com is blocked in some
+# regions, keyserver.ubuntu.com intermittently answers "No data"). The Yandex
+# mirror of the APT pool and dl.grafana.com ship different builds of the same
+# version, so each source has its own checksum. Bump all of these together.
 GRAFANA_VERSION="13.1.1"
-sudo apt install -y "grafana=${GRAFANA_VERSION}"
+GRAFANA_SOURCES=(
+    "https://mirror.yandex.ru/mirrors/packages.grafana.com/oss/deb/pool/main/g/grafana/grafana_${GRAFANA_VERSION}_29761037902_linux_amd64.deb f6b7ffa4cb7680820d3b75e842febf99b828248a7ac8a6923c726c03846e9ded"
+    "https://dl.grafana.com/oss/release/grafana_${GRAFANA_VERSION}_amd64.deb cbba39fe9580842e1742bbf5e256b6be093916345024e0206d7c5f32b56a3e62"
+)
+GRAFANA_DEB="/tmp/grafana_${GRAFANA_VERSION}_amd64.deb"
+fetched=""
+for attempt in 1 2 3; do
+    for source in "${GRAFANA_SOURCES[@]}"; do
+        read -r url sha256 <<< "$source"
+        if wget -q -O "$GRAFANA_DEB" "$url" \
+            && echo "${sha256}  ${GRAFANA_DEB}" | sha256sum -c -; then
+            fetched=1
+            break 2
+        fi
+    done
+    sleep $((attempt * 10))
+done
+if [ -z "$fetched" ]; then
+    echo "Failed to fetch Grafana ${GRAFANA_VERSION}" >&2
+    exit 1
+fi
+sudo apt install -y "$GRAFANA_DEB"
+rm -f "$GRAFANA_DEB"
 
 # Install the VictoriaLogs datasource plugin so Grafana can query
 # VictoriaLogs through its native LogsQL API instead of the incompatible
