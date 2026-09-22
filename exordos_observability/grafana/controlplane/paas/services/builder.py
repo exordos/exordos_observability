@@ -60,6 +60,9 @@ class GrafanaInstanceBuilder(PaaSBuilder):
         # repo-artifact registry (see GrafanaArtifactDashboard). Optional so
         # existing unit tests that don't exercise dashboard content
         # resolution can keep constructing this builder without Core creds.
+        # Unscoped on purpose: repo artifacts live in the nil project, so a
+        # project-scoped token makes the artifact lookup return an empty
+        # list (see create_core_client).
         self._cclient = None
         if core_api_base_url is not None:
             self._cclient = create_core_client(
@@ -67,6 +70,7 @@ class GrafanaInstanceBuilder(PaaSBuilder):
                 core_password=core_password,
                 core_api_base_url=core_api_base_url,
                 project_id=project_id,
+                use_project_scope=False,
             )
 
     def _get_datasources(self, instance: models.GrafanaInstance) -> dict:
