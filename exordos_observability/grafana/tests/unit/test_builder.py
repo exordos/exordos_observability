@@ -13,6 +13,7 @@
 #    under the License.
 """Unit tests for GrafanaInstanceBuilder dashboard content resolution."""
 
+import types
 import uuid as sys_uuid
 
 import pytest
@@ -691,3 +692,54 @@ class TestRenderNodeConfig:
         # Neither env file should contain an admin password line.
         assert "GF_SECURITY_ADMIN_PASSWORD" not in env1
         assert "GF_SECURITY_ADMIN_PASSWORD" not in env2
+
+
+class TestCoreClientScoping:
+    """The dashboard URN lookup must not be project-scoped.
+
+    Repo artifacts live in the nil project, so a project-scoped token makes
+    ``GET /v1/repo/artifacts/?urn=...`` return an empty list and the
+    dashboard content never resolves (see ``create_core_client``).
+    """
+
+    def test_paas_builder_uses_unscoped_core_client(self, monkeypatch) -> None:
+        captured = {}
+
+        def fake_create_core_client(**kwargs):
+            captured.update(kwargs)
+            return object()
+
+        monkeypatch.setattr(builder, "create_core_client", fake_create_core_client)
+
+        b = builder.GrafanaInstanceBuilder(
+            core_username="u",
+            core_password="p",
+            core_api_base_url="http://core.local/api/core",
+            project_id=PID,
+        )
+
+        assert b._cclient is not None
+        assert captured["use_project_scope"] is False
+
+    def test_create_core_client_forwards_scope(self, monkeypatch) -> None:
+        from exordos_observability.common import client as client_mod
+
+        captured = {}
+
+        class FakeDriver:
+            def __init__(self, **kwargs):
+                captured.update(kwargs)
+                self._client = types.SimpleNamespace(_client=object())
+
+        monkeypatch.setattr(
+            client_mod.core_drivers, "RestCoreCapabilityDriver", FakeDriver
+        )
+
+        # Default stays project-scoped (node private-key lookups need it).
+        client_mod.create_core_client("u", "p", "http://core.local", PID)
+        assert captured["use_project_scope"] is True
+
+        client_mod.create_core_client(
+            "u", "p", "http://core.local", PID, use_project_scope=False
+        )
+        assert captured["use_project_scope"] is False

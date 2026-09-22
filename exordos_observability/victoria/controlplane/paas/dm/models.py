@@ -19,9 +19,8 @@ from gcl_sdk.infra import constants as pc
 from gcl_sdk.infra.dm import models as sdk_models
 from restalchemy.dm import filters as ra_filters
 from restalchemy.dm import models as ra_models
-from restalchemy.dm import properties
+from restalchemy.dm import properties, types_dynamic
 from restalchemy.dm import types as ra_types
-from restalchemy.dm import types_dynamic
 
 from exordos_observability.victoria.controlplane.dm import auth as auth_kinds
 from exordos_observability.victoria.controlplane.dm import models
@@ -70,9 +69,7 @@ class VictoriaInstance(
         "victoria_instance_node": VictoriaInstanceNode,
     }
 
-    project_id = properties.property(
-        ra_types.UUID(), required=False, read_only=True
-    )
+    project_id = properties.property(ra_types.UUID(), required=False, read_only=True)
     version_ref = properties.property(
         ra_types.String(min_length=1, max_length=4096), required=False
     )

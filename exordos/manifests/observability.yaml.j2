@@ -194,6 +194,18 @@ resources:
         kind: bundled
         dashboard_id: 1860
         revision: 31
+    # Fleet-wide node health overview (grafana.com #22269), vendored under
+    # dashboards/ and published as a repo artifact (see exordos.yaml). The
+    # JSON is patched so its $job/$instance template variables match this
+    # platform's node_exporter scrape job ("node_exporter", not the
+    # upstream "node-exporter"). Sourced by urn rather than bundled so we
+    # own the copy for platform-specific modifications.
+    node_fleet_overview:
+      name: "node-fleet-overview"
+      project_id: "12345678-c625-4fee-81d5-f691897b8142"
+      source:
+        kind: urn
+        urn: "{{ artifacts.node_fleet_overview }}"
 
   # Wire the Grafana instance's datasources at the shared Victoria
   # instance's metrics/logs endpoints. Both instances are declared in this
@@ -233,6 +245,14 @@ resources:
       instance: $grafanaaas.types.grafana.instances.$grafana:uuid
       folder: ""
       version_ref: $grafanaaas.types.grafana.dashboards.$node_exporter_full:version_ref
+    # Bind the fleet overview to the shared Grafana instance, in the root
+    # folder alongside node-exporter-full.
+    node_fleet_overview:
+      name: "node-fleet-overview"
+      project_id: "12345678-c625-4fee-81d5-f691897b8142"
+      instance: $grafanaaas.types.grafana.instances.$grafana:uuid
+      folder: ""
+      version_ref: $grafanaaas.types.grafana.dashboards.$node_fleet_overview:version_ref
 
   # DNS records for the observability cluster, both pointing at the
   # first node IP of their respective instances:

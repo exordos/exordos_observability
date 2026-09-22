@@ -26,6 +26,13 @@ build:
     # Communal shared observability cluster (1 Victoria instance + 1 Grafana
     # instance + datasources) for platform-wide use.
     - manifest: manifests/observability.yaml.j2
+      artifacts:
+        # Fleet-wide node health dashboard (grafana.com #22269), vendored
+        # under dashboards/ and patched for this platform's node_exporter
+        # job label. Published as a repo artifact so the manifest can bind
+        # it to the shared Grafana instance through a urn source.
+        - name: node_fleet_overview
+          path: ../dashboards/node-fleet-overview.json
 
     # Example consumer element: declaratively creates its own Victoria +
     # Grafana instances + datasource, used as the functional-test fixture.
