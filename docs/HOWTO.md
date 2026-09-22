@@ -570,8 +570,9 @@ imports:
 ```
 
 This is the pattern used by `observability.yaml.j2` (which additionally
-uses OIDC auth for Grafana and profile-backed disk sizes — see the
-manifest for the full version).
+uses OIDC auth for Grafana and variable-backed disk sizes — the sizes
+are selector variables set via `$core.vs.values` so they can be
+overridden in one place; see the manifest for the full version).
 
 ---
 

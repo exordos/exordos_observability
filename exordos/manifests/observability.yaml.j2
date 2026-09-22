@@ -14,48 +14,25 @@ requirements:
 
 resources:
 
-  # Profile-backed default disk sizes for the observability Victoria instance.
-  # The values are selected per active core profile (develop/small/medium/
-  # large/legacy), mirroring the default_cores/default_ram pattern from
-  # core.yaml.j2. The profiles themselves are imported from core (see the
-  # profile_* imports below).
+  # Variable-backed default disk sizes for the observability Victoria
+  # instance. Declared as selector variables (latest strategy) so the
+  # sizes are set in one place — the $core.vs.values entries below —
+  # instead of being selected per active core profile. Admins override a
+  # size by adding a newer value linked to the same variable; no manifest
+  # edit or profile switch is needed.
   $core.vs.variables:
     metrics_disk_size:
       name: "metrics_disk_size"
       project_id: "12345678-c625-4fee-81d5-f691897b8142"
       setter:
-        kind: profile
-        element: null
-        fallback_strategy: ignore
-        profiles:
-          - profile: $observability.imports.$profile_develop:uuid
-            value: 10
-          - profile: $observability.imports.$profile_small:uuid
-            value: 20
-          - profile: $observability.imports.$profile_medium:uuid
-            value: 50
-          - profile: $observability.imports.$profile_large:uuid
-            value: 100
-          - profile: $observability.imports.$profile_legacy:uuid
-            value: 10
+        kind: selector
+        selector_strategy: latest
     logs_disk_size:
       name: "logs_disk_size"
       project_id: "12345678-c625-4fee-81d5-f691897b8142"
       setter:
-        kind: profile
-        element: null
-        fallback_strategy: ignore
-        profiles:
-          - profile: $observability.imports.$profile_develop:uuid
-            value: 10
-          - profile: $observability.imports.$profile_small:uuid
-            value: 20
-          - profile: $observability.imports.$profile_medium:uuid
-            value: 50
-          - profile: $observability.imports.$profile_large:uuid
-            value: 100
-          - profile: $observability.imports.$profile_legacy:uuid
-            value: 10
+        kind: selector
+        selector_strategy: latest
 
     # Core API base URL and Grafana root URL, used in Grafana OIDC
     # endpoint URLs. Declared as selector variables so they can be
@@ -94,6 +71,18 @@ resources:
   # Declared as a platform value + selector variable so it can be
   # updated in one place without editing the manifest.
   $core.vs.values:
+    metrics_disk_size:
+      name: "Metrics disk size"
+      project_id: "12345678-c625-4fee-81d5-f691897b8142"
+      value: 20
+      variable: $core.vs.variables.$metrics_disk_size:uuid
+
+    logs_disk_size:
+      name: "Logs disk size"
+      project_id: "12345678-c625-4fee-81d5-f691897b8142"
+      value: 20
+      variable: $core.vs.variables.$logs_disk_size:uuid
+
     core_api_url:
       name: "Core API URL"
       project_id: "12345678-c625-4fee-81d5-f691897b8142"
@@ -277,26 +266,6 @@ imports:
     element: "$core"
     kind: "resource"
     link: "$core.vs.variables.$default_ram"
-  profile_develop:
-    element: "$core"
-    kind: "resource"
-    link: "$core.vs.profiles.$develop"
-  profile_small:
-    element: "$core"
-    kind: "resource"
-    link: "$core.vs.profiles.$small"
-  profile_medium:
-    element: "$core"
-    kind: "resource"
-    link: "$core.vs.profiles.$medium"
-  profile_large:
-    element: "$core"
-    kind: "resource"
-    link: "$core.vs.profiles.$large"
-  profile_legacy:
-    element: "$core"
-    kind: "resource"
-    link: "$core.vs.profiles.$legacy"
 
 exports:
   victoria_instance:
