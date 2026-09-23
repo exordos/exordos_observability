@@ -37,7 +37,8 @@ exordos_observability/
 │       ├── grafanaaas.yaml.j2        # same, for grafana
 │       ├── observability.yaml.j2   # 1 victoria instance + 1 grafana instance + datasources
 │       ├── example_observability.yaml.j2    # functional-test fixture manifest
-│       └── nginx_dashboard.yaml.j2          # standalone consumer: NGINX dashboard on shared Grafana
+│       ├── nginx_dashboard.yaml.j2          # standalone consumer: NGINX dashboard on shared Grafana
+│       └── tests_dashboard.yaml.j2          # standalone consumer: exordos_tests CI results dashboard
 ├── etc/{exordos_metapaas/*.conf+logging.yaml, systemd/*.service}
 ├── exordos_observability/
 │   ├── victoria/   # slug=victoria, element_name=victoriaaas
@@ -105,6 +106,12 @@ A separate pattern exists for third-party manifests that want to attach resource
 A minimal standalone element that depends on `observability` and provisions the community **NGINX exporter** dashboard (grafana.com #12708, `bundled` source) onto the shared Grafana instance under the **Nginx** folder. It is manifest-only — no plugin, DP image, driver, or migration — because it reuses the already-registered `grafanaaas` plugin through the `observability` dependency.
 
 The element provides the **visualization only**; the `nginx_*` metrics it plots must already be in VictoriaMetrics. The platform's ingestion model is push-only (VictoriaMetrics does not scrape): the `eci_base` base image ships `vmagent`, which scrapes local exporters and `remote_write`s to the vmauth anonymous write endpoint (`http://<OBS_HOST>:8428/api/v1/write`). To get Nginx metrics flowing on a host — either by adding a scrape job to an existing base-image `vmagent`, or by installing `vmagent` on a bare host — see [HOWTO.md → "How to get Nginx metrics into the dashboard"](HOWTO.md#how-to-get-nginx-metrics-into-the-dashboard).
+
+### `tests_dashboard.yaml.j2` — standalone CI results dashboard consumer
+
+Same shape as `nginx_dashboard`: a manifest-only element that imports the shared `grafana_instance` from `observability` and binds the **Exordos Tests** dashboard to it under the **Tests** folder. The dashboard is declared inline (`raw` source) and plots the results of the `exordos_tests` CI workflows: result history, pass rate, job and step durations, failed steps and a run list linking to GitHub Actions.
+
+Each `exordos_tests` job pushes one sample per run to the vmauth anonymous import path (`http://<OBS_HOST>:8428/api/v1/import/prometheus`) from its last step (`.github/scripts/push-test-metrics.sh` in that repo): `exordos_tests_run_success`, `exordos_tests_run_duration_seconds`, `exordos_tests_run_info`, `exordos_tests_step_success` and `exordos_tests_step_duration_seconds`, labelled by `workflow`, `job`, `branch`, `element` and `base_version`. Two constraints shape the inline JSON: panels carry no datasource (the default `victoria-metrics` one is used — its uid is a control-plane UUID, and a `${datasource}` variable would start with `$` and be resolved as a manifest link), and the content is wrapped in `{% raw %}` so Jinja keeps the `{{label}}` legend formats.
 
 ### IAM
 
