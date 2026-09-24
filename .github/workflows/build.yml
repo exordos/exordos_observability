@@ -49,7 +49,8 @@ jobs:
       # No element gets more than ten minutes to come up.
       element-timeout: 600
       ssh: true
-      prepare-script: .github/scripts/prepare-realm.sh
+      overbook: true
+      dependencies: metapaas
       check-script: .github/scripts/run-functional-in-realm.sh
       tests-ref: realm_ssh_input
     secrets: inherit
