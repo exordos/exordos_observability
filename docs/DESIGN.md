@@ -109,7 +109,7 @@ The element provides the **visualization only**; the `nginx_*` metrics it plots 
 
 ### `tests_dashboard.yaml.j2` — standalone CI results dashboard consumer
 
-Same shape as `nginx_dashboard`: a manifest-only element that imports the shared `grafana_instance` from `observability` and binds the **Exordos Tests** dashboard to it under the **Tests** folder. The dashboard is declared inline (`raw` source) and plots the results of the `exordos_tests` CI workflows: result history, pass rate, job and step durations, failed steps and a run list linking to GitHub Actions.
+Same shape as `nginx_dashboard`: a manifest-only element that imports the shared `grafana_instance` from `observability` and binds the **Exordos Tests** dashboard to it in the root folder. The dashboard is declared inline (`raw` source) and plots the results of the `exordos_tests` CI workflows: result history, pass rate, job and step durations, failed steps and a run list linking to GitHub Actions.
 
 Each `exordos_tests` job pushes one sample per run to the vmauth anonymous import path (`http://<OBS_HOST>:8428/api/v1/import/prometheus`) from its last step (`.github/scripts/push-test-metrics.sh` in that repo): `exordos_tests_run_success`, `exordos_tests_run_duration_seconds`, `exordos_tests_run_info`, `exordos_tests_step_success` and `exordos_tests_step_duration_seconds`, labelled by `workflow`, `job`, `branch`, `element` and `base_version`. Two constraints shape the inline JSON: panels carry no datasource (the default `victoria-metrics` one is used — its uid is a control-plane UUID, and a `${datasource}` variable would start with `$` and be resolved as a manifest link), and the content is wrapped in `{% raw %}` so Jinja keeps the `{{label}}` legend formats.
 

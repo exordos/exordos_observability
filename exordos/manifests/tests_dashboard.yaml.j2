@@ -353,13 +353,12 @@ resources:
           # {% endraw %}
 
   # Bind the artifact to the shared Grafana instance owned by the
-  # `observability` element, under the "Tests" folder.
+  # `observability` element, in the root folder.
   $tests_dashboard.imports.$grafana_instance.dashboards:
     exordos_tests_binding:
       name: "exordos-tests"
       project_id: "12345678-c625-4fee-81d5-f691897b8142"
       instance: $tests_dashboard.imports.$grafana_instance:uuid
-      folder: "Tests"
       version_ref: $grafanaaas.types.grafana.dashboards.$exordos_tests:version_ref
 
 imports:
