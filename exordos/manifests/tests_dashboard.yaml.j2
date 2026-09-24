@@ -26,8 +26,9 @@ resources:
   # victoria-metrics datasource of the shared instance. Its uid is the
   # control-plane UUID, unknown here, and a "${datasource}" variable cannot
   # be used: the manifest engine treats a string starting with `$` as a
-  # resource link. The content sits in a raw block so Jinja leaves the
-  # `{{label}}` legend formats alone.
+  # resource link. The content sits in a raw block so Jinja keeps the
+  # legend format placeholders; the raw tags live in YAML comments because
+  # the build CLI YAML-parses the unrendered template to read `name`.
   $grafanaaas.types.grafana.dashboards:
     exordos_tests:
       name: "exordos-tests"
@@ -35,7 +36,7 @@ resources:
       source:
         kind: raw
         content:
-{% raw %}
+          # {% raw %}
           title: "Exordos Tests"
           uid: "exordos-tests"
           schemaVersion: 41
@@ -349,7 +350,7 @@ resources:
                     properties:
                       - id: "custom.hidden"
                         value: true
-{% endraw %}
+          # {% endraw %}
 
   # Bind the artifact to the shared Grafana instance owned by the
   # `observability` element, under the "Tests" folder.
