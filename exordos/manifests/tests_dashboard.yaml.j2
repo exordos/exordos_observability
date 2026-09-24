@@ -1,0 +1,368 @@
+name: "tests_dashboard"
+description: "Standalone element: provisions the Exordos Tests dashboard (CI results of exordos_tests pushed to VictoriaMetrics) onto the shared observability Grafana instance."
+schema_version: 1
+version: "{{ version }}"
+api_version: "v1"
+
+requirements:
+  core:
+    from_version: "0.2.30"
+  grafanaaas:
+    from_version: "0.0.0"
+  observability:
+    from_version: "0.0.1"
+
+resources:
+
+  # Dashboard for the exordos_tests CI results. Every job of the
+  # exordos_tests workflows pushes one sample per run to the vmauth
+  # anonymous write path (/api/v1/import/prometheus), see
+  # exordos_tests/.github/scripts/push-test-metrics.sh:
+  #   exordos_tests_run_success, exordos_tests_run_duration_seconds,
+  #   exordos_tests_run_info, exordos_tests_step_success,
+  #   exordos_tests_step_duration_seconds
+  #
+  # Panels carry no datasource, so Grafana uses the default one -- the
+  # victoria-metrics datasource of the shared instance. Its uid is the
+  # control-plane UUID, unknown here, and a "${datasource}" variable cannot
+  # be used: the manifest engine treats a string starting with `$` as a
+  # resource link. The content sits in a raw block so Jinja keeps the
+  # legend format placeholders; the raw tags live in YAML comments because
+  # the build CLI YAML-parses the unrendered template to read `name`.
+  $grafanaaas.types.grafana.dashboards:
+    exordos_tests:
+      name: "exordos-tests"
+      project_id: "12345678-c625-4fee-81d5-f691897b8142"
+      source:
+        kind: raw
+        content:
+          # {% raw %}
+          title: "Exordos Tests"
+          uid: "exordos-tests"
+          schemaVersion: 41
+          version: 1
+          refresh: "5m"
+          time:
+            from: "now-30d"
+            to: "now"
+          templating:
+            list:
+              - name: "workflow"
+                label: "Workflow"
+                type: "query"
+                query:
+                  query: "label_values(exordos_tests_run_success, workflow)"
+                  refId: "workflow"
+                definition: "label_values(exordos_tests_run_success, workflow)"
+                refresh: 2
+                multi: true
+                includeAll: true
+                sort: 1
+              - name: "branch"
+                label: "Branch"
+                type: "query"
+                query:
+                  query: "label_values(exordos_tests_run_success{workflow=~\"$workflow\"}, branch)"
+                  refId: "branch"
+                definition: "label_values(exordos_tests_run_success{workflow=~\"$workflow\"}, branch)"
+                refresh: 2
+                multi: true
+                includeAll: true
+                current:
+                  text: "master"
+                  value: "master"
+                sort: 1
+          panels:
+            - id: 1
+              type: "table"
+              title: "Latest result"
+              description: "Last run of every workflow in the selected time range."
+              gridPos: {h: 8, w: 14, x: 0, y: 0}
+              targets:
+                - refId: "A"
+                  expr: "last_over_time(exordos_tests_run_success{workflow=~\"$workflow\", branch=~\"$branch\"}[$__range])"
+                  instant: true
+                  range: false
+                  format: "table"
+                - refId: "B"
+                  expr: "last_over_time(exordos_tests_run_duration_seconds{workflow=~\"$workflow\", branch=~\"$branch\"}[$__range])"
+                  instant: true
+                  range: false
+                  format: "table"
+                - refId: "C"
+                  expr: "tlast_over_time(exordos_tests_run_success{workflow=~\"$workflow\", branch=~\"$branch\"}[$__range]) * 1000"
+                  instant: true
+                  range: false
+                  format: "table"
+              transformations:
+                - id: "merge"
+                  options: {}
+                - id: "organize"
+                  options:
+                    excludeByName:
+                      Time: true
+                      __name__: true
+                      repository: true
+                      job: true
+                      event: true
+                    indexByName:
+                      workflow: 0
+                      branch: 1
+                      element: 2
+                      base_version: 3
+                      "Value #A": 4
+                      "Value #B": 5
+                      "Value #C": 6
+                    renameByName:
+                      workflow: "Workflow"
+                      branch: "Branch"
+                      element: "Element"
+                      base_version: "Core version"
+                      "Value #A": "Result"
+                      "Value #B": "Duration"
+                      "Value #C": "Finished"
+              fieldConfig:
+                defaults: {}
+                overrides:
+                  - matcher: {id: "byName", options: "Result"}
+                    properties:
+                      - id: "mappings"
+                        value:
+                          - type: "value"
+                            options:
+                              "1": {text: "PASS", color: "green", index: 0}
+                              "0": {text: "FAIL", color: "red", index: 1}
+                      - id: "custom.cellOptions"
+                        value: {type: "color-background"}
+                  - matcher: {id: "byName", options: "Duration"}
+                    properties:
+                      - id: "unit"
+                        value: "s"
+                  - matcher: {id: "byName", options: "Finished"}
+                    properties:
+                      - id: "unit"
+                        value: "dateTimeAsIso"
+
+            - id: 2
+              type: "stat"
+              title: "Pass rate"
+              description: "Share of successful runs in the selected time range."
+              gridPos: {h: 8, w: 10, x: 14, y: 0}
+              targets:
+                - refId: "A"
+                  expr: "avg_over_time(exordos_tests_run_success{workflow=~\"$workflow\", branch=~\"$branch\"}[$__range])"
+                  legendFormat: "{{workflow}}"
+                  instant: true
+                  range: false
+              options:
+                reduceOptions:
+                  calcs: ["lastNotNull"]
+                  fields: ""
+                  values: false
+                colorMode: "background"
+                graphMode: "none"
+                textMode: "value_and_name"
+                orientation: "auto"
+              fieldConfig:
+                defaults:
+                  unit: "percentunit"
+                  min: 0
+                  max: 1
+                  decimals: 0
+                  thresholds:
+                    mode: "absolute"
+                    steps:
+                      - {color: "red", value: null}
+                      - {color: "orange", value: 0.8}
+                      - {color: "green", value: 0.95}
+                overrides: []
+
+            - id: 3
+              type: "state-timeline"
+              title: "Result history"
+              description: "One cell per run. A red cell is a failed or cancelled run."
+              gridPos: {h: 8, w: 24, x: 0, y: 8}
+              interval: "1h"
+              targets:
+                - refId: "A"
+                  expr: "min_over_time(exordos_tests_run_success{workflow=~\"$workflow\", branch=~\"$branch\"}[$__interval])"
+                  legendFormat: "{{workflow}}"
+              options:
+                showValue: "never"
+                mergeValues: false
+                rowHeight: 0.8
+                legend: {showLegend: false}
+              fieldConfig:
+                defaults:
+                  mappings:
+                    - type: "value"
+                      options:
+                        "1": {text: "PASS", color: "green", index: 0}
+                        "0": {text: "FAIL", color: "red", index: 1}
+                  color: {mode: "thresholds"}
+                  thresholds:
+                    mode: "absolute"
+                    steps:
+                      - {color: "red", value: null}
+                      - {color: "green", value: 1}
+                overrides: []
+
+            - id: 4
+              type: "timeseries"
+              title: "Job duration"
+              gridPos: {h: 9, w: 12, x: 0, y: 16}
+              interval: "1h"
+              targets:
+                - refId: "A"
+                  expr: "max_over_time(exordos_tests_run_duration_seconds{workflow=~\"$workflow\", branch=~\"$branch\"}[$__interval])"
+                  legendFormat: "{{workflow}}"
+              fieldConfig:
+                defaults:
+                  unit: "s"
+                  custom:
+                    drawStyle: "line"
+                    showPoints: "always"
+                    pointSize: 6
+                    spanNulls: true
+                overrides: []
+
+            - id: 5
+              type: "bargauge"
+              title: "Step duration (latest run)"
+              gridPos: {h: 9, w: 12, x: 12, y: 16}
+              targets:
+                - refId: "A"
+                  expr: "sort_desc(last_over_time(exordos_tests_step_duration_seconds{workflow=~\"$workflow\", branch=~\"$branch\"}[$__range]) > 5)"
+                  legendFormat: "{{workflow}}: {{step}}"
+                  instant: true
+                  range: false
+              options:
+                orientation: "horizontal"
+                displayMode: "basic"
+                showUnfilled: true
+                reduceOptions:
+                  calcs: ["lastNotNull"]
+                  fields: ""
+                  values: false
+              fieldConfig:
+                defaults:
+                  unit: "s"
+                  color: {mode: "continuous-GrYlRd"}
+                overrides: []
+
+            - id: 6
+              type: "table"
+              title: "Failed steps (latest run)"
+              description: "Steps whose most recent run failed."
+              gridPos: {h: 8, w: 12, x: 0, y: 25}
+              targets:
+                - refId: "A"
+                  expr: "last_over_time(exordos_tests_step_success{workflow=~\"$workflow\", branch=~\"$branch\"}[$__range]) == 0"
+                  instant: true
+                  range: false
+                  format: "table"
+              transformations:
+                - id: "organize"
+                  options:
+                    excludeByName:
+                      Time: true
+                      Value: true
+                      __name__: true
+                      repository: true
+                      job: true
+                      event: true
+                    renameByName:
+                      workflow: "Workflow"
+                      branch: "Branch"
+                      step: "Step"
+                      element: "Element"
+                      base_version: "Core version"
+              fieldConfig:
+                defaults: {}
+                overrides: []
+
+            - id: 7
+              type: "table"
+              title: "Runs"
+              description: "Every run in the selected time range; the run id links to GitHub Actions."
+              gridPos: {h: 8, w: 12, x: 12, y: 25}
+              targets:
+                - refId: "A"
+                  expr: "tlast_over_time(exordos_tests_run_info{workflow=~\"$workflow\", branch=~\"$branch\"}[$__range]) * 1000"
+                  instant: true
+                  range: false
+                  format: "table"
+              transformations:
+                - id: "organize"
+                  options:
+                    excludeByName:
+                      Time: true
+                      __name__: true
+                      job: true
+                      event: true
+                      element: true
+                      base_version: true
+                      run_attempt: true
+                    indexByName:
+                      Value: 0
+                      workflow: 1
+                      branch: 2
+                      result: 3
+                      run_id: 4
+                      sha: 5
+                    renameByName:
+                      Value: "Finished"
+                      workflow: "Workflow"
+                      branch: "Branch"
+                      result: "Result"
+                      run_id: "Run"
+                      sha: "Commit"
+                - id: "sortBy"
+                  options:
+                    sort:
+                      - {field: "Finished", desc: true}
+              fieldConfig:
+                defaults: {}
+                overrides:
+                  - matcher: {id: "byName", options: "Finished"}
+                    properties:
+                      - id: "unit"
+                        value: "dateTimeAsIso"
+                  - matcher: {id: "byName", options: "Result"}
+                    properties:
+                      - id: "mappings"
+                        value:
+                          - type: "value"
+                            options:
+                              success: {color: "green", index: 0}
+                              failure: {color: "red", index: 1}
+                              cancelled: {color: "orange", index: 2}
+                      - id: "custom.cellOptions"
+                        value: {type: "color-text"}
+                  - matcher: {id: "byName", options: "Run"}
+                    properties:
+                      - id: "links"
+                        value:
+                          - title: "Open in GitHub Actions"
+                            url: "https://github.com/${__data.fields.repository}/actions/runs/${__value.raw}"
+                            targetBlank: true
+                  - matcher: {id: "byName", options: "repository"}
+                    properties:
+                      - id: "custom.hidden"
+                        value: true
+          # {% endraw %}
+
+  # Bind the artifact to the shared Grafana instance owned by the
+  # `observability` element, in the root folder.
+  $tests_dashboard.imports.$grafana_instance.dashboards:
+    exordos_tests_binding:
+      name: "exordos-tests"
+      project_id: "12345678-c625-4fee-81d5-f691897b8142"
+      instance: $tests_dashboard.imports.$grafana_instance:uuid
+      version_ref: $grafanaaas.types.grafana.dashboards.$exordos_tests:version_ref
+
+imports:
+  grafana_instance:
+    element: "$observability"
+    kind: "resource"
+    link: "$grafanaaas.types.grafana.instances.$grafana"
