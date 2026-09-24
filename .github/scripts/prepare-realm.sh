@@ -24,7 +24,7 @@
 #   not all fit on it one to one -- the runner test overbooked the same way.
 # - Install metapaas, which victoriaaas and grafanaaas plug into, unless the
 #   realm already has it, and wait until it is ACTIVE.  Its CP image is
-#   net-booted into its VM, which alone took ~18 min on a GitHub runner.
+#   net-booted into its VM; like every element it gets ten minutes.
 set -euo pipefail
 
 here="$(dirname "$0")"
@@ -41,5 +41,5 @@ if [ -z "$(exordos ee l -o json -f name=metapaas | jq -r '.[0].status // ""')" ]
 else
     echo "The realm already has metapaas"
 fi
-"$here/wait-for-element.sh" metapaas 2700
+"$here/wait-for-element.sh" metapaas 600
 exordos e e show metapaas

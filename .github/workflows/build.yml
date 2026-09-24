@@ -46,8 +46,8 @@ jobs:
       # Installed in this order: observability requires both plugins.
       elements: victoriaaas grafanaaas observability
       version: ${{ needs.Build.outputs.version }}
-      # The metapaas CP and then the data plane nodes boot in turn.
-      element-timeout: 2700
+      # No element gets more than ten minutes to come up.
+      element-timeout: 600
       ssh: true
       prepare-script: .github/scripts/prepare-realm.sh
       check-script: .github/scripts/run-functional-in-realm.sh
