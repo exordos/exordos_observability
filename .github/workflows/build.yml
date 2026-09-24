@@ -7,15 +7,6 @@ on:
     tags:
       - '*'
 
-env:
-  PYTHON_VERSION: "3.12"
-  CORE_ENDPOINT_URL: http://10.20.0.2:80/api/core
-  CORE_USERNAME: "admin"
-  CORE_PASSWORD: "admin"
-  ELEMENT_DEPS: "metapaas"
-  # Installed in this order: observability requires both plugins.
-  ELEMENT_NAMES: "victoriaaas grafanaaas observability"
-
 jobs:
   # The self-hosted runners come with packer, KVM and the exordos CLI already
   # set up, so the build is just checkout + build + push. The pushed version
@@ -24,7 +15,7 @@ jobs:
     runs-on: [self-hosted, vm]
     if: ${{ github.actor != 'dependabot[bot]' }}
     outputs:
-      observability_version: ${{ steps.build_element.outputs.observability_version }}
+      version: ${{ steps.build_element.outputs.version }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -37,7 +28,7 @@ jobs:
           set -eux
 
           VERSION="$(exordos get-version .)"
-          echo "observability_version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
 
           exordos build $(pwd)
 
@@ -45,150 +36,20 @@ jobs:
           echo "$PUSH_EXORDOS_CFG" | base64 -d > exordos/exordos.push.yaml
           exordos push -c exordos/exordos.push.yaml -e output -t exordos_repo -f --latest
 
-  # End-to-end run: a throwaway core on a GitHub runner, the elements built
-  # from this commit installed into it, then the functional suite.
+  # End-to-end run on a realm, through exordos_tests' shared workflow: the
+  # elements built from this commit installed on it, then the functional suite
+  # run on the realm itself, where the data plane nodes are reachable.
   E2E:
-    runs-on: ubuntu-24.04
     needs: Build
-    if: ${{ github.actor != 'dependabot[bot]' }}
-    env:
-      OBSERVABILITY_VERSION: ${{ needs.Build.outputs.observability_version }}
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-      - name: Install exordos CLI
-        run: curl -fsSL https://repo.exordos.com/install.sh | sudo sh
-      - name: Install hypervisor
-        run: |
-          set -eux
-
-          # Prefetch the core artifacts into ~/.cache/exordos while the
-          # hypervisor packages are being installed: both steps are
-          # independent and each takes around half a minute.
-          exordos bootstrap -i latest -m core --download-only > prefetch.log 2>&1 &
-          PREFETCH_PID=$!
-
-          sudo exordos compute hypervisors init --connection-uri qemu+tcp://10.20.0.1/system
-          sudo chmod 666 /dev/kvm
-
-          wait $PREFETCH_PID || { cat prefetch.log; exit 1; }
-          cat prefetch.log
-
-      # `--pool-agent-placement` defaults to `core` (exordos CLI >= 2026-08-26),
-      # which runs the pool agent inside the core VM and expects to reach
-      # libvirt over qemu+tcp. On a GitHub runner nothing serves that, so no
-      # compute node ever gets created and every element stays IN_PROGRESS.
-      # `local` runs a universal agent on the runner itself against the socket
-      # `hypervisors init` prepared (same as exordos_s3 / exordos_mail CI).
-      - name: Bootstrap exordos_core
-        timeout-minutes: 20
-        run: |
-          set -eux
-
-          exordos settings set-realm default --endpoint $CORE_ENDPOINT_URL
-          exordos settings set-context default --name default --user $CORE_USERNAME --password $CORE_PASSWORD
-          exordos bootstrap -i latest -f -m core --pool-agent-placement local \
-            --admin-password $CORE_PASSWORD --cidr 10.20.0.0/22
-
-          for i in {1..60}; do
-            if exordos ready_api; then
-              echo "Exordos Core API is ready"
-              break
-            fi
-            if [ "$i" -eq 60 ]; then
-              echo "Exordos Core API did not become ready"
-              exit 1
-            fi
-            echo "Waiting for Exordos Core API... ($i/60)"
-            sleep 2
-          done
-
-          .github/scripts/wait-for-element.sh core 600
-
-          # The runner is a single small VM: let the hypervisor overbook so the
-          # metapaas CP plus the victoria and grafana dataplanes all fit.
-          HYPER_UUID="$(exordos c h l -o json | jq -r '.[0].uuid')"
-          exordos compute hypervisors update $HYPER_UUID --cores-ratio 10.0 --ram-ratio 10.0
-
-      - name: Install element dependencies
-        run: |
-          for dep in $ELEMENT_DEPS; do
-            exordos e elements install $dep
-          done
-
-      - name: Install observability elements
-        run: |
-          set -eux
-          for element in $ELEMENT_NAMES; do
-            exordos e e install $element -v $OBSERVABILITY_VERSION
-          done
-
-      # The metapaas CP image is pulled from repo.exordos.com and net-booted
-      # into its VM (~18 min on a GitHub runner); only then does the CP create
-      # the victoria/grafana DP nodes, which need a few more minutes to boot.
-      - name: Wait for the elements
-        timeout-minutes: 50
-        run: |
-          set -eux
-
-          for element in $ELEMENT_DEPS $ELEMENT_NAMES; do
-            .github/scripts/wait-for-element.sh "$element" 2700
-          done
-
-          exordos e e show observability
-
-      - name: Set up Python ${{ env.PYTHON_VERSION }}
-        uses: actions/setup-python@v6
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-      - name: Install uv
-        uses: astral-sh/setup-uv@v7
-      - name: Install tox-uv
-        run: uv tool install tox --with tox-uv
-      - name: Install requirements
-        run: sudo apt update && sudo apt install --yes libev-dev
-
-      - name: Run functional tests
-        env:
-          EXORDOS_ENDPOINT: ${{ env.CORE_ENDPOINT_URL }}
-          EXORDOS_USERNAME: ${{ env.CORE_USERNAME }}
-          EXORDOS_PASSWORD: ${{ env.CORE_PASSWORD }}
-          EXORDOS_POLL_TIMEOUT: "1800"
-        run: tox -e ${{ env.PYTHON_VERSION }}-functional
-
-      # The compute agent runs on this runner, so when a node will not come up
-      # the reason is in its journal, not in the core API.
-      - name: Collect diagnostics
-        if: failure()
-        run: |
-          set +e
-          echo "===== elements ====="
-          exordos ee list
-          for e in observability victoriaaas grafanaaas metapaas; do
-            exordos ee show "$e"
-          done
-          echo "===== compute nodes ====="
-          exordos cn list
-          echo "===== repositories ====="
-          exordos repo list
-          echo "===== agent processes ====="
-          ps -ef | grep -iE "agent|libvirtd|qemu-system" | grep -v grep
-          # `exordos compute hypervisors init` sets up a "local universal
-          # agent", whose unit is not named after exordos.
-          echo "===== agent journal ====="
-          sudo journalctl -u '*agent*' --no-pager -n 400
-          echo "===== libvirt journal ====="
-          sudo journalctl -u libvirtd --no-pager -n 100
-          echo "===== domains ====="
-          sudo virsh list --all
-          echo "===== disk / memory ====="
-          df -h /
-          free -m
-
-      - name: Debug session on failure
-        uses: owenthereal/action-upterm@v1
-        if: failure()
-        with:
-          limit-access-to-actor: true
-          wait-timeout-minutes: 5
+    uses: exordos/exordos_tests/.github/workflows/element_realm_test.yml@realm_ssh_input
+    with:
+      # Installed in this order: observability requires both plugins.
+      elements: victoriaaas grafanaaas observability
+      version: ${{ needs.Build.outputs.version }}
+      # The metapaas CP and then the data plane nodes boot in turn.
+      element-timeout: 2700
+      ssh: true
+      prepare-script: .github/scripts/prepare-realm.sh
+      check-script: .github/scripts/run-functional-in-realm.sh
+      tests-ref: realm_ssh_input
+    secrets: inherit
