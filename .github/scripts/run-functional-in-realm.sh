@@ -24,7 +24,7 @@
 # there, against the core on that VM.
 #
 # SSH_KEY, SSH_HOST, SSH_PORT and ADMIN_PASSWORD come from the environment, as
-# exordos_tests' element_realm_test workflow leaves them with `ssh: true`.
+# exordos_ci's element_realm_test workflow leaves them with `ssh: true`.
 set -euo pipefail
 
 : "${SSH_KEY:?SSH_KEY is not set}"

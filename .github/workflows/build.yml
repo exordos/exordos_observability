@@ -36,12 +36,12 @@ jobs:
           echo "$PUSH_EXORDOS_CFG" | base64 -d > exordos/exordos.push.yaml
           exordos push -c exordos/exordos.push.yaml -e output -t exordos_repo -f --latest
 
-  # End-to-end run on a realm, through exordos_tests' shared workflow: the
+  # End-to-end run on a realm, through exordos_ci's shared workflow: the
   # elements built from this commit installed on it, then the functional suite
   # run on the realm itself, where the data plane nodes are reachable.
   E2E:
     needs: Build
-    uses: exordos/exordos_tests/.github/workflows/element_realm_test.yml@realm_ssh_input
+    uses: exordos/exordos_ci/.github/workflows/element_realm_test.yml@master
     with:
       # Installed in this order: observability requires both plugins.
       elements: victoriaaas grafanaaas observability
@@ -52,5 +52,4 @@ jobs:
       overbook: true
       dependencies: metapaas
       check-script: .github/scripts/run-functional-in-realm.sh
-      tests-ref: realm_ssh_input
     secrets: inherit
