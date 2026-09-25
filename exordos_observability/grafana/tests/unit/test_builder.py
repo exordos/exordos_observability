@@ -694,6 +694,80 @@ class TestRenderNodeConfig:
         assert "GF_SECURITY_ADMIN_PASSWORD" not in env2
 
 
+class TestDiskSpec:
+    """Grafana state must live on a data disk separate from the root disk.
+
+    The root disk is re-imaged on every DP image update (grafanaaas
+    upgrade); without a separate data disk /var/lib/grafana — including the
+    generated admin password — is wiped.
+    """
+
+    VERSION_REF = "urn:exordos:grafana:1:https://repo.example.com/img.raw.zst"
+
+    def _make_instance(self, **kwargs):
+        from exordos_observability.grafana.controlplane.infra.dm import (
+            models as infra_models,
+        )
+
+        kwargs.setdefault("uuid", sys_uuid.uuid4())
+        kwargs.setdefault("name", "i")
+        kwargs.setdefault("project_id", PID)
+        kwargs.setdefault("cpu", 1)
+        kwargs.setdefault("ram", 512)
+        kwargs.setdefault("root_disk_size", 8)
+        kwargs.setdefault("version_ref", self.VERSION_REF)
+        kwargs.setdefault("auth", auth_kinds.PasswordAuth(password="secret"))
+        return infra_models.GrafanaInstance(**kwargs)
+
+    def _assert_disks(self, disks, data_disk_size) -> None:
+        assert disks == [
+            {
+                "size": 8,
+                "image": "https://repo.example.com/img.raw.zst",
+                "label": "root",
+            },
+            {
+                "size": data_disk_size,
+                "label": "data",
+                "mount_point": c.GRAFANA_PERSISTENT_MOUNT,
+            },
+        ]
+
+    def test_data_disk_size_defaults(self) -> None:
+        inst = self._make_instance()
+        assert inst.data_disk_size == c.DEFAULT_DATA_DISK_SIZE
+
+    def test_builder_disk_spec_has_data_disk(self, monkeypatch) -> None:
+        from exordos_observability.common import builder as common_builder
+        from exordos_observability.grafana.controlplane.infra.services import (
+            builder as infra_builder_mod,
+        )
+
+        monkeypatch.setattr(common_builder, "create_core_client", lambda **kw: None)
+        infra_builder = infra_builder_mod.CoreInfraBuilder(
+            core_username="u",
+            core_password="p",
+            core_api_base_url="http://localhost",
+            project_id=PID,
+        )
+        inst = self._make_instance(data_disk_size=30)
+
+        spec = infra_builder._build_disk_spec(inst)
+
+        self._assert_disks(spec.disks, 30)
+
+    def test_get_infra_node_set_has_data_disk(self) -> None:
+        inst = self._make_instance(data_disk_size=30)
+
+        (node_set,) = inst.get_infra(PID)
+
+        self._assert_disks(node_set.disk_spec.disks, 30)
+
+    def test_data_disk_size_is_target_field(self) -> None:
+        inst = self._make_instance()
+        assert "data_disk_size" in inst.get_resource_target_fields()
+
+
 class TestCoreClientScoping:
     """The dashboard URN lookup must not be project-scoped.
 

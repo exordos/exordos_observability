@@ -58,6 +58,7 @@ class GrafanaInstance(models.GrafanaInstance, ua_models.InstanceWithDerivativesM
                 "cpu",
                 "ram",
                 "root_disk_size",
+                "data_disk_size",
                 "replicas",
                 "version_ref",
                 "project_id",
@@ -160,6 +161,11 @@ class GrafanaInstance(models.GrafanaInstance, ua_models.InstanceWithDerivativesM
                         "size": self.root_disk_size,
                         "image": parse_disk_image(self.version_ref),
                         "label": "root",
+                    },
+                    {
+                        "size": self.data_disk_size,
+                        "label": "data",
+                        "mount_point": c.GRAFANA_PERSISTENT_MOUNT,
                     },
                 ]
             ),
