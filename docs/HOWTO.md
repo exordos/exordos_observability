@@ -164,6 +164,7 @@ resources:
       cpu: 2
       ram: 2048
       root_disk_size: 20           # GB
+      data_disk_size: 10           # GB, persistent /var/lib/grafana
       replicas: 1                  # Phase 1: single-node only
       auth:
         kind: password
@@ -186,6 +187,7 @@ imports:
 | `cpu` | int | yes | 1–128 cores |
 | `ram` | int | yes | 512–1073741824 MB |
 | `root_disk_size` | int | yes | 8–1073741824 GB |
+| `data_disk_size` | int | no | 8–1073741824 GB, default 10. Persistent disk for `/var/lib/grafana` (sqlite db, admin password) — survives DP image updates. Grow-only |
 | `replicas` | int | no | Locked to 1 (single-node mode) |
 | `auth` | kind model | yes | Grafana auth (password or oidc — see below) |
 | `version_ref` | string | yes | From the version catalog import |
@@ -508,6 +510,7 @@ resources:
       cpu: 2
       ram: 2048
       root_disk_size: 20
+      data_disk_size: 10
       replicas: 1
       auth:
         kind: password

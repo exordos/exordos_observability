@@ -14,12 +14,12 @@ requirements:
 
 resources:
 
-  # Variable-backed default disk sizes for the observability Victoria
-  # instance. Declared as selector variables (latest strategy) so the
-  # sizes are set in one place — the $core.vs.values entries below —
+  # Variable-backed default disk sizes for the observability Victoria and
+  # Grafana instances. Declared as selector variables (latest strategy) so
+  # the sizes are set in one place — the $core.vs.values entries below —
   # instead of being selected per active core profile. Admins override a
   # size by adding a newer value linked to the same variable; no manifest
-  # edit or profile switch is needed.
+  # edit or profile switch is needed. Disks can only grow, never shrink.
   $core.vs.variables:
     metrics_disk_size:
       name: "metrics_disk_size"
@@ -29,6 +29,12 @@ resources:
         selector_strategy: latest
     logs_disk_size:
       name: "logs_disk_size"
+      project_id: "12345678-c625-4fee-81d5-f691897b8142"
+      setter:
+        kind: selector
+        selector_strategy: latest
+    grafana_data_disk_size:
+      name: "grafana_data_disk_size"
       project_id: "12345678-c625-4fee-81d5-f691897b8142"
       setter:
         kind: selector
@@ -82,6 +88,12 @@ resources:
       project_id: "12345678-c625-4fee-81d5-f691897b8142"
       value: 20
       variable: $core.vs.variables.$logs_disk_size:uuid
+
+    grafana_data_disk_size:
+      name: "Grafana data disk size"
+      project_id: "12345678-c625-4fee-81d5-f691897b8142"
+      value: 10
+      variable: $core.vs.variables.$grafana_data_disk_size:uuid
 
     core_api_url:
       name: "Core API URL"
@@ -160,6 +172,7 @@ resources:
       cpu: $observability.imports.$var_default_cores:value
       ram: $observability.imports.$var_default_ram:value
       root_disk_size: 20
+      data_disk_size: $core.vs.variables.$grafana_data_disk_size:value
       replicas: 1
       auth:
         kind: oidc
