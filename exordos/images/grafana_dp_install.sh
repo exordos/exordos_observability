@@ -69,8 +69,14 @@ rm -f "$GRAFANA_DEB"
 
 # Install the VictoriaLogs datasource plugin so Grafana can query
 # VictoriaLogs through its native LogsQL API instead of the incompatible
-# Loki API.
-sudo grafana cli plugins install victoriametrics-logs-datasource
+# Loki API. Plugins go outside /var/lib/grafana: that directory is moved to
+# the persistent data disk at bootstrap and reused across image updates, so
+# plugins kept there would never pick up the versions shipped in a new
+# image. Must match paths.plugins in exordos-metapaas-grafana.service.
+GRAFANA_PLUGINS_DIR="/opt/grafana/plugins"
+sudo mkdir -p "$GRAFANA_PLUGINS_DIR"
+sudo grafana cli --pluginsDir "$GRAFANA_PLUGINS_DIR" plugins install victoriametrics-logs-datasource
+sudo chown -R grafana:grafana "$GRAFANA_PLUGINS_DIR"
 
 # The apt package ships its own grafana-server.service unit and starts
 # grafana-server against the default config immediately; we run it under

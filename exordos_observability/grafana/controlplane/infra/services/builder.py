@@ -49,6 +49,11 @@ class CoreInfraBuilder(ObservabilityInfraBuilder):
                     "image": parse_disk_image(instance.version_ref),
                     "label": "root",
                 },
+                {
+                    "size": instance.data_disk_size,
+                    "label": "data",
+                    "mount_point": c.GRAFANA_PERSISTENT_MOUNT,
+                },
             ]
         )
 
