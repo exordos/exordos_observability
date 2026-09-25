@@ -257,6 +257,7 @@ $grafanaaas.types.grafana.instances:
     cpu: $observability.imports.$var_default_cores:value
     ram: $observability.imports.$var_default_ram:value
     root_disk_size: 20
+    data_disk_size: $core.vs.variables.$grafana_data_disk_size:value
     replicas: 1
     auth:
       kind: oidc

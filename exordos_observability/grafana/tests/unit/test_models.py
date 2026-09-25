@@ -28,6 +28,23 @@ from exordos_observability.grafana.controlplane.paas.dm import models as paas_mo
 from exordos_observability.grafana.controlplane.paas.services import builder
 
 
+class _DiskShrinkProp:
+    def __init__(self, old_value, dirty):
+        self.old_value = old_value
+        self._dirty = dirty
+
+    def is_dirty(self):
+        return self._dirty
+
+
+class _DiskShrinkStub:
+    def __init__(self, data_disk_size, properties):
+        self.data_disk_size = data_disk_size
+        self.properties = properties
+
+    _validate_update = models.GrafanaInstance._validate_update
+
+
 class TestGrafanaVersion:
     def test_tablename(self) -> None:
         assert models.GrafanaVersion.__tablename__ == "grafana_versions"
@@ -401,3 +418,20 @@ class TestGrafanaArtifactDashboard:
         # insert() would hit the DB; verify the computed format directly.
         expected = f"{uid}_{urn}"
         assert dash.build_version_ref() == expected
+
+
+class TestValidateUpdate:
+    def test_data_disk_grow_ok(self) -> None:
+        stub = _DiskShrinkStub(
+            data_disk_size=20,
+            properties={"data_disk_size": _DiskShrinkProp(old_value=10, dirty=True)},
+        )
+        stub._validate_update()  # must not raise
+
+    def test_data_disk_shrink_raises(self) -> None:
+        stub = _DiskShrinkStub(
+            data_disk_size=10,
+            properties={"data_disk_size": _DiskShrinkProp(old_value=20, dirty=True)},
+        )
+        with pytest.raises(ValueError):
+            stub._validate_update()

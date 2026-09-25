@@ -15,7 +15,7 @@ ExecStart=/usr/sbin/grafana-server \
     --pidfile=/run/grafana/grafana-server.pid \
     cfg:default.paths.data=/var/lib/grafana \
     cfg:default.paths.logs=/var/log/grafana \
-    cfg:default.paths.plugins=/var/lib/grafana/plugins \
+    cfg:default.paths.plugins=/opt/grafana/plugins \
     cfg:default.paths.provisioning=/etc/grafana/provisioning
 # Grafana reloads its file-based provisioning config (datasources,
 # dashboards) on SIGHUP without a full restart.

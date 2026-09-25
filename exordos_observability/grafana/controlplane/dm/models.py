@@ -128,6 +128,10 @@ class GrafanaInstance(
     cpu = properties.property(types.Integer(min_value=1, max_value=128))
     ram = properties.property(types.Integer(min_value=512, max_value=1024**3))
     root_disk_size = properties.property(types.Integer(min_value=8, max_value=1024**3))
+    data_disk_size = properties.property(
+        types.Integer(min_value=8, max_value=1024**3),
+        default=c.DEFAULT_DATA_DISK_SIZE,
+    )
     auth = properties.property(
         types_dynamic.KindModelSelectorType(
             types_dynamic.KindModelType(auth_kinds.PasswordAuth),
@@ -145,6 +149,15 @@ class GrafanaInstance(
         types.String(min_length=1, max_length=4096),
         required=True,
     )
+
+    def _validate_update(self, session=None):
+        prop = self.properties["data_disk_size"]
+        if prop.is_dirty() and prop.old_value > self.data_disk_size:
+            raise ValueError("data_disk_size shrink is not supported yet")
+
+    def update(self, session=None, force=False):
+        self._validate_update(session=session)
+        super().update(session=session, force=force)
 
     def delete(self, session=None, **kwargs):
         u.remove_nested_dm(GrafanaDatasource, "instance", self, session=session)

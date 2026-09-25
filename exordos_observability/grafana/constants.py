@@ -35,6 +35,14 @@ GRAFANA_DASHBOARDS_DIR = "/var/lib/grafana/dashboards/exordos"
 
 GRAFANA_HTTP_PORT = 3000
 
+# Mount point of the persistent data disk on the dataplane node. Must match
+# PERSISTENT_MOUNT in lib_bootstrap.sh: grafana_dp_bootstrap.sh mounts the
+# disk there and bind-mounts /var/lib/grafana (and /var/log) onto it, so
+# Grafana's state survives root-disk re-imaging on DP image updates.
+GRAFANA_PERSISTENT_MOUNT = "/persist"
+
+DEFAULT_DATA_DISK_SIZE = 10
+
 GRAFANA_SLUG = "grafana"
 
 # Durable marker file written when provisioning files have been updated
