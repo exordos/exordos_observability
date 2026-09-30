@@ -22,6 +22,8 @@ conventions, see [`AGENTS.md`](AGENTS.md).
 - [How to wire Victoria + Grafana together](#how-to-wire-victoria--grafana-together)
 - [How to reference resources from another manifest](#how-to-reference-resources-from-another-manifest)
 - [How to get Nginx metrics into the dashboard](#how-to-get-nginx-metrics-into-the-dashboard)
+- [Element status dashboard](#element-status-dashboard)
+- [Compute dashboard](#compute-dashboard)
 
 ---
 
@@ -916,3 +918,101 @@ These steps are the same for Part A and Part B.
 > **Note:** This is per-machine, host-local configuration. The scrape config
 > lives on the node and is rendered locally by the agent — it is not
 > delivered by the control plane.
+
+---
+
+## Element status dashboard
+
+The `observability` element provisions the **Exordos Elements** dashboard
+(`dashboards/exordos-elements.json`) in the **Core** folder of the shared
+Grafana.
+It shows the current status of every EM element and resource, and how long
+each element spent outside ACTIVE within the selected range.
+
+The data comes from Exordos Core itself: the `StateMetricsService` nested in
+`ec-gservice` reads the EM tables every 15 seconds and writes the samples to
+`/var/lib/exordos/node_exporter/core_state.prom`. The textfile collector of the
+core node's node_exporter serves the file, and vmagent scrapes it with the rest
+of the node metrics, so a series that is gone from the file (a deleted object)
+becomes stale at the next scrape. Nothing has to be configured on the Victoria
+or Grafana side. The service is controlled by the `[state_metrics]` group of
+the core config (`enabled`, `period`, `textfile_path`). It needs a core built on
+exordos_base 1.3.5 or newer, the first with the textfile directory.
+
+| Metric | Labels | Value |
+|---|---|---|
+| `exordos_em_element_status` | `element` | status code |
+| `exordos_em_element_info` | `element`, `element_uuid`, `version`, `install_type`, `project_id` | `1` |
+| `exordos_em_resource_status` | `element`, `kind`, `resource`, `resource_uuid` | status code |
+
+Status codes: `1` = `NEW`, `2` = `IN_PROGRESS`, `3` = `ACTIVE` (`0` is never
+used, so a missing value is not mistaken for a status). `kind` is the manifest
+link prefix of the resource without the leading `$`, e.g. `core.compute.sets`.
+
+Dashboard variables:
+
+- **Element** / **Kind** — narrow the tables down.
+
+Quick check that the metrics arrive (see the Nginx section above for how to
+get the `grafana-reader` password):
+
+```bash
+curl -s -u "grafana-reader:<password>" \
+  "http://<OBS_HOST>:8428/api/v1/query?query=count(exordos_em_element_status)"
+```
+
+The history starts when a core with the `StateMetricsService` is deployed;
+earlier periods are empty.
+
+---
+
+## Compute dashboard
+
+The `observability` element provisions the **Exordos Compute** dashboard
+(`dashboards/exordos-compute.json`, uid `exordos-compute`) in the **Core**
+folder of the shared Grafana. It is fed by the same core service as the elements
+dashboard and shows:
+
+- **Overview** — node and set counts, nodes not ACTIVE or in ERROR, sets with
+  fewer ACTIVE nodes than replicas, how much of the pool cores and RAM is
+  allocated, and **Data age**: how long ago core last wrote the metrics. If it
+  grows, `ec-gservice` is down or stuck and the rest of the dashboard shows
+  stale data.
+- **Nodes** — every node with its hostname, status, description, set, element,
+  cores, RAM, disks, image, IPs, pool, age and time spent outside ACTIVE. A
+  hostname opens a menu: its host metrics in Node Exporter Full, or its logs.
+  An element opens the elements dashboard.
+- **Sets** — every set with its replicas and **Missing nodes** (replicas
+  without an ACTIVE node).
+- **Created and deleted** — nodes and sets appeared and gone per interval.
+- **Capacity** — cores and RAM of every machine pool, and their allocation
+  over time.
+- **Node logs** — journald of the node in the **Host** variable, narrowed by
+  **Search** (LogsQL, e.g. `error` or `_SYSTEMD_UNIT:ec-gservice.service`).
+  The logs link of the Nodes table opens this panel for that node.
+
+| Metric | Labels | Value |
+|---|---|---|
+| `exordos_compute_node_info` | `node_uuid`, `node`, `hostname`, `description`, `project_id`, `node_type`, `set`, `set_uuid`, `element`, `image`, `disks`, `ipv4`, `pool` | `1` |
+| `exordos_compute_node_status` | `node_uuid`, `node`, `set_uuid`, `element` | status code |
+| `exordos_compute_node_cores`, `_ram_bytes`, `_disk_bytes`, `_created_timestamp_seconds` | `node_uuid` | value |
+| `exordos_compute_set_info` | `set_uuid`, `set`, `description`, `project_id`, `node_type`, `element`, `image`, `disks` | `1` |
+| `exordos_compute_set_status` | `set_uuid`, `set`, `element` | status code |
+| `exordos_compute_set_replicas`, `_cores`, `_ram_bytes`, `_disk_bytes`, `_created_timestamp_seconds` | `set_uuid` | value, per node for cores, RAM and disks |
+| `exordos_compute_pool_status` | `pool_uuid`, `pool` | pool status code |
+| `exordos_compute_pool_cores`, `_cores_available`, `_ram_bytes`, `_ram_available_bytes` | `pool_uuid`, `pool` | value |
+
+Node and set status codes: `1` = `NEW`, `2` = `SCHEDULED`, `3` = `IN_PROGRESS`,
+`4` = `STARTED`, `5` = `ACTIVE`, `6` = `ERROR`. Pool status codes: `1` =
+`ACTIVE`, `2` = `IN_PROGRESS`, `3` = `MAINTENANCE`, `4` = `DISABLED`.
+
+`hostname` follows the rule of the machine builder (the node's hostname, or its
+name when it has none), so it matches the `instance` of the node_exporter
+metrics and the `_HOSTNAME` of the node's journald. A node of a set belongs to
+the element of the set.
+
+The created/deleted panels count the series seen within an interval that were
+absent at its start (created) or are absent at its end (deleted), so an object
+that lived a shorter time than one interval is counted on both. One that lived
+less than the 15 s write period can be missed. An interval that had no data at its start is skipped, so a gap in the
+metrics does not show up as everything being created at once.

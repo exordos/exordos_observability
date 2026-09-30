@@ -208,6 +208,27 @@ resources:
       source:
         kind: urn
         urn: "{{ artifacts.node_fleet_overview }}"
+    # Current status of the EM elements and their resources, vendored under
+    # dashboards/ like the fleet overview. The data comes from exordos_core,
+    # which writes the exordos_em_* state metrics for the node_exporter
+    # textfile collector of the core node; on a core without that the
+    # dashboard is simply empty.
+    exordos_elements:
+      name: "exordos-elements"
+      project_id: "12345678-c625-4fee-81d5-f691897b8142"
+      source:
+        kind: urn
+        urn: "{{ artifacts.exordos_elements }}"
+    # Nodes, node sets and machine pools, vendored under dashboards/ like
+    # the elements dashboard and fed by the exordos_compute_* state metrics
+    # of the same core service. Its logs panel reads the journald of the
+    # nodes from the victoria-logs datasource.
+    exordos_compute:
+      name: "exordos-compute"
+      project_id: "12345678-c625-4fee-81d5-f691897b8142"
+      source:
+        kind: urn
+        urn: "{{ artifacts.exordos_compute }}"
 
   # Wire the Grafana instance's datasources at the shared Victoria
   # instance's metrics/logs endpoints. Both instances are declared in this
@@ -255,6 +276,20 @@ resources:
       instance: $grafanaaas.types.grafana.instances.$grafana:uuid
       folder: ""
       version_ref: $grafanaaas.types.grafana.dashboards.$node_fleet_overview:version_ref
+    # Dashboards fed by exordos_core's StateMetricsService go to the Core
+    # folder.
+    exordos_elements:
+      name: "exordos-elements"
+      project_id: "12345678-c625-4fee-81d5-f691897b8142"
+      instance: $grafanaaas.types.grafana.instances.$grafana:uuid
+      folder: "Core"
+      version_ref: $grafanaaas.types.grafana.dashboards.$exordos_elements:version_ref
+    exordos_compute:
+      name: "exordos-compute"
+      project_id: "12345678-c625-4fee-81d5-f691897b8142"
+      instance: $grafanaaas.types.grafana.instances.$grafana:uuid
+      folder: "Core"
+      version_ref: $grafanaaas.types.grafana.dashboards.$exordos_compute:version_ref
 
   # DNS records for the observability cluster, both pointing at the
   # first node IP of their respective instances:

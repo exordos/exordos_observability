@@ -33,6 +33,15 @@ build:
         # it to the shared Grafana instance through a urn source.
         - name: node_fleet_overview
           path: ../dashboards/node-fleet-overview.json
+        # Current status of the EM elements and their resources. Our own
+        # dashboard, fed by the core state metrics (exordos_em_*).
+        - name: exordos_elements
+          path: ../dashboards/exordos-elements.json
+        # Nodes, node sets and machine pools: inventory, created/deleted
+        # rate, capacity and node logs. Our own dashboard,
+        # fed by the core state metrics (exordos_compute_*).
+        - name: exordos_compute
+          path: ../dashboards/exordos-compute.json
 
     # Example consumer element: declaratively creates its own Victoria +
     # Grafana instances + datasource, used as the functional-test fixture.
