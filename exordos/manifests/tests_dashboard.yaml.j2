@@ -87,12 +87,12 @@ resources:
               gridPos: {h: 8, w: 14, x: 0, y: 0}
               targets:
                 - refId: "A"
-                  expr: "last_over_time(exordos_tests_run_success{workflow=~\"$workflow\", branch=~\"$branch\"}[$__range]) and on(workflow, branch, event) topk(1, tlast_over_time(exordos_tests_run_success{workflow=~\"$workflow\", branch=~\"$branch\"}[$__range])) by (workflow, branch)"
+                  expr: "label_del(last_over_time(exordos_tests_run_success{workflow=~\"$workflow\", branch=~\"$branch\"}[$__range]) and on(workflow, branch, event) topk(1, tlast_over_time(exordos_tests_run_success{workflow=~\"$workflow\", branch=~\"$branch\"}[$__range])) by (workflow, branch), \"__name__\")"
                   instant: true
                   range: false
                   format: "table"
                 - refId: "B"
-                  expr: "last_over_time(exordos_tests_run_duration_seconds{workflow=~\"$workflow\", branch=~\"$branch\"}[$__range]) and on(workflow, branch, event) topk(1, tlast_over_time(exordos_tests_run_success{workflow=~\"$workflow\", branch=~\"$branch\"}[$__range])) by (workflow, branch)"
+                  expr: "label_del(last_over_time(exordos_tests_run_duration_seconds{workflow=~\"$workflow\", branch=~\"$branch\"}[$__range]) and on(workflow, branch, event) topk(1, tlast_over_time(exordos_tests_run_success{workflow=~\"$workflow\", branch=~\"$branch\"}[$__range])) by (workflow, branch), \"__name__\")"
                   instant: true
                   range: false
                   format: "table"
@@ -152,13 +152,13 @@ resources:
 
             - id: 2
               type: "stat"
-              title: "Pass rate"
-              description: "Share of successful runs in the selected time range."
+              title: "Pass rate (master)"
+              description: "Share of successful runs on master in the selected time range; ignores the Branch filter."
               gridPos: {h: 8, w: 10, x: 14, y: 0}
               targets:
                 - refId: "A"
-                  expr: "sum by (workflow, branch) (sum_over_time(exordos_tests_run_success{workflow=~\"$workflow\", branch=~\"$branch\"}[$__range])) / sum by (workflow, branch) (count_over_time(exordos_tests_run_success{workflow=~\"$workflow\", branch=~\"$branch\"}[$__range]))"
-                  legendFormat: "{{workflow}} ({{branch}})"
+                  expr: "sum by (workflow) (sum_over_time(exordos_tests_run_success{workflow=~\"$workflow\", branch=\"master\"}[$__range])) / sum by (workflow) (count_over_time(exordos_tests_run_success{workflow=~\"$workflow\", branch=\"master\"}[$__range]))"
+                  legendFormat: "{{workflow}}"
                   instant: true
                   range: false
               options:
