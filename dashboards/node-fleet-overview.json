@@ -194,7 +194,7 @@
                   {
                     "targetBlank": true,
                     "title": "Drill down to instance ${__data.fields.instance}",
-                    "url": "d/rYdddlPWk?var-instance=${__data.fields.instance}&${__url_time_range}&var-datasource=${datasource}"
+                    "url": "d/rYdddlPWk?var-job=node_exporter&var-node=${__data.fields.instance}&${__url_time_range}&var-DS_PROMETHEUS=${DS_Metrics}"
                   }
                 ]
               },
@@ -568,7 +568,7 @@
           "links": [
             {
               "title": "Drill down to instance ${__field.labels.instance}",
-              "url": "d/rYdddlPWk?var-instance=${__field.labels.instance}&${__url_time_range}&var-datasource=${datasource}"
+              "url": "d/rYdddlPWk?var-job=node_exporter&var-node=${__field.labels.instance}&${__url_time_range}&var-DS_PROMETHEUS=${DS_Metrics}"
             }
           ],
           "mappings": [],
@@ -769,7 +769,7 @@
           "links": [
             {
               "title": "Drill down to instance ${__field.labels.instance}",
-              "url": "d/rYdddlPWk?var-instance=${__field.labels.instance}&${__url_time_range}&var-datasource=${datasource}"
+              "url": "d/rYdddlPWk?var-job=node_exporter&var-node=${__field.labels.instance}&${__url_time_range}&var-DS_PROMETHEUS=${DS_Metrics}"
             }
           ],
           "mappings": [],
@@ -945,7 +945,7 @@
           "links": [
             {
               "title": "Drill down to instance ${__field.labels.instance}",
-              "url": "d/rYdddlPWk?var-instance=${__field.labels.instance}&${__url_time_range}&var-datasource=${datasource}"
+              "url": "d/rYdddlPWk?var-job=node_exporter&var-node=${__field.labels.instance}&${__url_time_range}&var-DS_PROMETHEUS=${DS_Metrics}"
             }
           ],
           "max": 1,
@@ -1097,7 +1097,7 @@
           "links": [
             {
               "title": "Drill down to instance ${__field.labels.instance}",
-              "url": "d/rYdddlPWk?var-instance=${__field.labels.instance}&${__url_time_range}&var-datasource=${datasource}"
+              "url": "d/rYdddlPWk?var-job=node_exporter&var-node=${__field.labels.instance}&${__url_time_range}&var-DS_PROMETHEUS=${DS_Metrics}"
             }
           ],
           "max": 1,
@@ -1249,7 +1249,7 @@
           "links": [
             {
               "title": "Drill down to instance ${__field.labels.instance}",
-              "url": "d/rYdddlPWk?var-instance=${__field.labels.instance}&${__url_time_range}&var-datasource=${datasource}"
+              "url": "d/rYdddlPWk?var-job=node_exporter&var-node=${__field.labels.instance}&${__url_time_range}&var-DS_PROMETHEUS=${DS_Metrics}"
             }
           ],
           "unit": "pps"
