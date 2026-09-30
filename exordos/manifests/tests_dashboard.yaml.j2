@@ -22,6 +22,13 @@ resources:
   #   exordos_tests_run_info, exordos_tests_step_success,
   #   exordos_tests_step_duration_seconds
   #
+  # The same workflow/branch is split into several series by `event`
+  # (schedule, workflow_dispatch) and `base_version`, so every panel
+  # aggregates by (workflow, branch) or keeps only the series of the most
+  # recent run (`topk(1, tlast_over_time(...)) by (workflow, branch)`);
+  # otherwise each test shows up once per trigger. Re-run attempts share a
+  # run_id, so the Runs table keeps the latest attempt of each run.
+  #
   # Panels carry no datasource, so Grafana uses the default one -- the
   # victoria-metrics datasource of the shared instance. Its uid is the
   # control-plane UUID, unknown here, and a "${datasource}" variable cannot
@@ -76,21 +83,21 @@ resources:
             - id: 1
               type: "table"
               title: "Latest result"
-              description: "Last run of every workflow in the selected time range."
+              description: "Last run of every workflow and branch in the selected time range, whatever triggered it."
               gridPos: {h: 8, w: 14, x: 0, y: 0}
               targets:
                 - refId: "A"
-                  expr: "last_over_time(exordos_tests_run_success{workflow=~\"$workflow\", branch=~\"$branch\"}[$__range])"
+                  expr: "last_over_time(exordos_tests_run_success{workflow=~\"$workflow\", branch=~\"$branch\"}[$__range]) and on(workflow, branch, event) topk(1, tlast_over_time(exordos_tests_run_success{workflow=~\"$workflow\", branch=~\"$branch\"}[$__range])) by (workflow, branch)"
                   instant: true
                   range: false
                   format: "table"
                 - refId: "B"
-                  expr: "last_over_time(exordos_tests_run_duration_seconds{workflow=~\"$workflow\", branch=~\"$branch\"}[$__range])"
+                  expr: "last_over_time(exordos_tests_run_duration_seconds{workflow=~\"$workflow\", branch=~\"$branch\"}[$__range]) and on(workflow, branch, event) topk(1, tlast_over_time(exordos_tests_run_success{workflow=~\"$workflow\", branch=~\"$branch\"}[$__range])) by (workflow, branch)"
                   instant: true
                   range: false
                   format: "table"
                 - refId: "C"
-                  expr: "tlast_over_time(exordos_tests_run_success{workflow=~\"$workflow\", branch=~\"$branch\"}[$__range]) * 1000"
+                  expr: "topk(1, tlast_over_time(exordos_tests_run_success{workflow=~\"$workflow\", branch=~\"$branch\"}[$__range])) by (workflow, branch) * 1000"
                   instant: true
                   range: false
                   format: "table"
@@ -150,8 +157,8 @@ resources:
               gridPos: {h: 8, w: 10, x: 14, y: 0}
               targets:
                 - refId: "A"
-                  expr: "avg_over_time(exordos_tests_run_success{workflow=~\"$workflow\", branch=~\"$branch\"}[$__range])"
-                  legendFormat: "{{workflow}}"
+                  expr: "sum by (workflow, branch) (sum_over_time(exordos_tests_run_success{workflow=~\"$workflow\", branch=~\"$branch\"}[$__range])) / sum by (workflow, branch) (count_over_time(exordos_tests_run_success{workflow=~\"$workflow\", branch=~\"$branch\"}[$__range]))"
+                  legendFormat: "{{workflow}} ({{branch}})"
                   instant: true
                   range: false
               options:
@@ -185,8 +192,8 @@ resources:
               interval: "1h"
               targets:
                 - refId: "A"
-                  expr: "min_over_time(exordos_tests_run_success{workflow=~\"$workflow\", branch=~\"$branch\"}[$__interval])"
-                  legendFormat: "{{workflow}}"
+                  expr: "min by (workflow, branch) (min_over_time(exordos_tests_run_success{workflow=~\"$workflow\", branch=~\"$branch\"}[$__interval]))"
+                  legendFormat: "{{workflow}} ({{branch}})"
               options:
                 showValue: "never"
                 mergeValues: false
@@ -214,8 +221,8 @@ resources:
               interval: "1h"
               targets:
                 - refId: "A"
-                  expr: "max_over_time(exordos_tests_run_duration_seconds{workflow=~\"$workflow\", branch=~\"$branch\"}[$__interval])"
-                  legendFormat: "{{workflow}}"
+                  expr: "max by (workflow, branch) (max_over_time(exordos_tests_run_duration_seconds{workflow=~\"$workflow\", branch=~\"$branch\"}[$__interval]))"
+                  legendFormat: "{{workflow}} ({{branch}})"
               fieldConfig:
                 defaults:
                   unit: "s"
@@ -232,8 +239,8 @@ resources:
               gridPos: {h: 9, w: 12, x: 12, y: 16}
               targets:
                 - refId: "A"
-                  expr: "sort_desc(last_over_time(exordos_tests_step_duration_seconds{workflow=~\"$workflow\", branch=~\"$branch\"}[$__range]) > 5)"
-                  legendFormat: "{{workflow}}: {{step}}"
+                  expr: "sort_desc(max by (workflow, branch, step) (last_over_time(exordos_tests_step_duration_seconds{workflow=~\"$workflow\", branch=~\"$branch\"}[$__range]) and on(workflow, branch, event) topk(1, tlast_over_time(exordos_tests_run_success{workflow=~\"$workflow\", branch=~\"$branch\"}[$__range])) by (workflow, branch)) > 5)"
+                  legendFormat: "{{workflow}} ({{branch}}): {{step}}"
                   instant: true
                   range: false
               options:
@@ -253,11 +260,11 @@ resources:
             - id: 6
               type: "table"
               title: "Failed steps (latest run)"
-              description: "Steps whose most recent run failed."
+              description: "Failed steps of the most recent run of every workflow and branch."
               gridPos: {h: 8, w: 12, x: 0, y: 25}
               targets:
                 - refId: "A"
-                  expr: "last_over_time(exordos_tests_step_success{workflow=~\"$workflow\", branch=~\"$branch\"}[$__range]) == 0"
+                  expr: "(last_over_time(exordos_tests_step_success{workflow=~\"$workflow\", branch=~\"$branch\"}[$__range]) == 0) and on(workflow, branch, event) topk(1, tlast_over_time(exordos_tests_run_success{workflow=~\"$workflow\", branch=~\"$branch\"}[$__range])) by (workflow, branch)"
                   instant: true
                   range: false
                   format: "table"
@@ -284,11 +291,11 @@ resources:
             - id: 7
               type: "table"
               title: "Runs"
-              description: "Every run in the selected time range; the run id links to GitHub Actions."
+              description: "Every run in the selected time range, with the result of its latest attempt; the run id links to GitHub Actions."
               gridPos: {h: 8, w: 12, x: 12, y: 25}
               targets:
                 - refId: "A"
-                  expr: "tlast_over_time(exordos_tests_run_info{workflow=~\"$workflow\", branch=~\"$branch\"}[$__range]) * 1000"
+                  expr: "topk(1, tlast_over_time(exordos_tests_run_info{workflow=~\"$workflow\", branch=~\"$branch\"}[$__range])) by (run_id) * 1000"
                   instant: true
                   range: false
                   format: "table"
@@ -302,20 +309,21 @@ resources:
                       event: true
                       element: true
                       base_version: true
-                      run_attempt: true
                     indexByName:
                       Value: 0
                       workflow: 1
                       branch: 2
                       result: 3
                       run_id: 4
-                      sha: 5
+                      run_attempt: 5
+                      sha: 6
                     renameByName:
                       Value: "Finished"
                       workflow: "Workflow"
                       branch: "Branch"
                       result: "Result"
                       run_id: "Run"
+                      run_attempt: "Attempt"
                       sha: "Commit"
                 - id: "sortBy"
                   options:
