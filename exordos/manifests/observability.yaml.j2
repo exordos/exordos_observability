@@ -150,7 +150,7 @@ resources:
 
   # OIDC identity provider linked to the Grafana IAM client.
   # The callback URL matches Grafana's generic OAuth callback path on
-  # the observability DNS name (declared below).
+  # the configured Grafana root URL.
   $core.iam.idp:
     grafana_idp:
       name: "Grafana OIDC Provider"
@@ -159,7 +159,7 @@ resources:
       iam_client: $core.iam.clients.$grafana_oidc:uuid
       callback:
         kind: callback_uri
-        callback: "http://observability.local.genesis-core.tech/login/generic_oauth"
+        callback: f"{$core.vs.variables.$var_grafana_root_url:value}/login/generic_oauth"
       # Grafana's generic OAuth provider does not send a nonce parameter in
       # the authorization request, so the Idp must not require it.
       nonce_required: false
