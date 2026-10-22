@@ -56,6 +56,7 @@ users:
     url_map:
       - src_paths:
           - "/api/v1/query.*"
+          - "/api/v1/export"
           - "/api/v1/series"
           - "/api/v1/label/[^/]+/values"
           - "/api/v1/labels"
