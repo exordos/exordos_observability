@@ -55,6 +55,9 @@ class TestVmauthConfigRendering:
         read_paths = reader["url_map"][0]["src_paths"]
         assert any("/api/v1/query" in p for p in read_paths)
         assert "/api/v1/series" in read_paths
+        assert "/api/v1/export" in read_paths
+        anonymous_paths = doc["unauthorized_user"]["url_map"][0]["src_paths"]
+        assert "/api/v1/export" not in anonymous_paths
 
     def test_render_contains_write_only_unauthorized_user(self) -> None:
         inst = _make_instance()
