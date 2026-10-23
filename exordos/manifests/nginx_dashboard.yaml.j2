@@ -1,5 +1,5 @@
 name: "nginx_dashboard"
-description: "Standalone element: provisions the community NGINX exporter dashboard (grafana.com #12708) onto the shared observability Grafana instance."
+description: "Standalone element: provisions the Nginx dashboard (traffic, errors, response time and clients from the access log, plus exporter connection counters) onto the shared observability Grafana instance."
 schema_version: 1
 version: "{{ version }}"
 api_version: "v1"
@@ -14,19 +14,18 @@ requirements:
 
 resources:
 
-  # Dashboard artifact sourced from the Grafana community catalog. This is
-  # the official dashboard for nginx-prometheus-exporter metrics
-  # (nginx_up, nginx_connections_*, nginx_http_requests_total), using the
-  # prometheus datasource and an $instance variable resolved via
-  # label_values(nginx_up, instance).
+  # Our own dashboard, vendored under dashboards/ and published as a repo
+  # artifact. Most panels read the nginx access log (JSON shipped through
+  # journald to VictoriaLogs), the connection panels read the
+  # nginx-prometheus-exporter metrics. The log format nginx must use is in
+  # docs/HOWTO.md.
   $grafanaaas.types.grafana.dashboards:
     nginx:
       name: "nginx"
       project_id: "12345678-c625-4fee-81d5-f691897b8142"
       source:
-        kind: bundled
-        dashboard_id: 12708
-        revision: 1
+        kind: urn
+        urn: "{{ artifacts.nginx_dashboard }}"
 
   # Bind the artifact to the shared Grafana instance owned by the
   # `observability` element. The nested collection is addressed through the

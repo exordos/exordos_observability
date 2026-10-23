@@ -37,7 +37,7 @@ exordos_observability/
 │       ├── grafanaaas.yaml.j2        # same, for grafana
 │       ├── observability.yaml.j2   # 1 victoria instance + 1 grafana instance + datasources
 │       ├── example_observability.yaml.j2    # functional-test fixture manifest
-│       ├── nginx_dashboard.yaml.j2          # standalone consumer: NGINX dashboard on shared Grafana
+│       ├── nginx_dashboard.yaml.j2          # standalone consumer: Nginx dashboard (access log + exporter) on shared Grafana
 │       └── tests_dashboard.yaml.j2          # standalone consumer: exordos_tests CI results dashboard
 ├── etc/{exordos_metapaas/*.conf+logging.yaml, systemd/*.service}
 ├── exordos_observability/
@@ -111,9 +111,15 @@ A separate pattern exists for third-party manifests that want to attach resource
 
 ### `nginx_dashboard.yaml.j2` — standalone NGINX dashboard consumer
 
-A minimal standalone element that depends on `observability` and provisions the community **NGINX exporter** dashboard (grafana.com #12708, `bundled` source) onto the shared Grafana instance under the **Nginx** folder. It is manifest-only — no plugin, DP image, driver, or migration — because it reuses the already-registered `grafanaaas` plugin through the `observability` dependency.
+A minimal standalone element that depends on `observability` and provisions our own **Nginx** dashboard (`dashboards/nginx.json`, artifact `nginx_dashboard`, uid `exordos-nginx`, `urn` source) onto the shared Grafana instance under the **Nginx** folder. It is manifest-only — no plugin, DP image, driver, or migration — because it reuses the already-registered `grafanaaas` plugin through the `observability` dependency. It replaced the community NGINX exporter dashboard (grafana.com #12708), which only plotted the `stub_status` counters: no domains, status codes, response times or clients.
 
-The element provides the **visualization only**; the `nginx_*` metrics it plots must already be in VictoriaMetrics. The platform's ingestion model is push-only (VictoriaMetrics does not scrape): the `eci_base` base image ships `vmagent`, which scrapes local exporters and `remote_write`s to the vmauth anonymous write endpoint (`http://<OBS_HOST>:8428/api/v1/write`). To get Nginx metrics flowing on a host — either by adding a scrape job to an existing base-image `vmagent`, or by installing `vmagent` on a bare host — see [HOWTO.md → "How to get Nginx metrics into the dashboard"](HOWTO.md#how-to-get-nginx-metrics-into-the-dashboard).
+- **Two data sources.** Most panels read the nginx **access log** in VictoriaLogs; the Connections row reads the `nginx-prometheus-exporter` metrics (`nginx_up`, `nginx_connections_*`). Per-client and per-domain data is deliberately not turned into metrics: a label per client network or `Host` value is unbounded, an attack would make it explode, and the logs are needed for the log panels anyway.
+- **How the log arrives.** nginx writes a JSON `log_format` to syslog (`/dev/log`, tag `nginx_access`), journald stores it, and the base image's `systemd-journal-upload` → `vlagent` ship journald to VictoriaLogs — no agent of its own. The base image also forwards syslog through rsyslog, so every line arrives **twice**; the dashboard filters on `SYSLOG_IDENTIFIER`, which only the journald copy has, so nothing is double-counted. The JSON stays in `_msg` and the queries `unpack_json` it; the **Node** variable is the journald `_HOSTNAME`, which equals the exporter's `instance` label by the scrape-job convention.
+- **Grouping by `server_name`.** Domain panels group by the `server` field (the `server_name` the request matched), not by the `Host` header: an attacker controls the header, so grouping by it would give every random value its own series.
+- **Data minimisation.** The default format logs no client address, the path without its query string and only the host of the referer. Two opt-ins are documented in the HOWTO: the client's `/24` / `/64` network (`client_net`, masked in nginx with a `map`), and the error log, whose lines carry the full client address. Retention is the Victoria instance's single `retention_period`.
+- **Verification.** The log format, the masking `map` and the dashboard were checked against nginx 1.27, VictoriaLogs v1.52.0, Grafana 13.1.1 and the VictoriaLogs datasource v0.33.1, with journald + journal-upload emulated (the `/insert/journald/upload` request it makes). The journald rate limit (`LogRateLimitIntervalSec=0` drop-in) and a real `systemd-journal-upload` were not exercised.
+
+The setup on the nginx hosts — log format, journald rate limit, exporter, scrape job, and the agents on a bare host — is in [HOWTO.md → Nginx dashboard](HOWTO.md#nginx-dashboard).
 
 ### `tests_dashboard.yaml.j2` — standalone CI results dashboard consumer
 
