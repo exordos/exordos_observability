@@ -53,12 +53,18 @@ build:
 
     - manifest: manifests/example_grafana_dashboard.yaml.j2
 
-    # Standalone consumer element: provisions the community NGINX exporter
-    # dashboard (grafana.com #12708) onto the shared observability Grafana
-    # instance. Depends on the `observability` element (imports its Grafana
-    # instance); reuses the already-built grafanaaas plugin, so it needs no
-    # DP image or wheel artifact of its own.
+    # Standalone consumer element: provisions the Nginx dashboard onto the
+    # shared observability Grafana instance. Depends on the `observability`
+    # element (imports its Grafana instance); reuses the already-built
+    # grafanaaas plugin, so it needs no DP image or wheel artifact of its
+    # own.
     - manifest: manifests/nginx_dashboard.yaml.j2
+      artifacts:
+        # Our own dashboard: traffic, errors, response time and clients from
+        # the nginx access log in VictoriaLogs, plus the connection counters
+        # of nginx-prometheus-exporter.
+        - name: nginx_dashboard
+          path: ../dashboards/nginx.json
 
     # Standalone consumer element: provisions the "Exordos Tests" dashboard
     # (CI results of exordos_tests, pushed to VictoriaMetrics by its
