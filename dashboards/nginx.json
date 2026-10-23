@@ -1,0 +1,2652 @@
+{
+ "__inputs": [
+  {
+   "name": "DS_Metrics",
+   "label": "Prometheus",
+   "description": "",
+   "type": "datasource",
+   "pluginId": "prometheus",
+   "pluginName": "Prometheus"
+  },
+  {
+   "name": "DS_Logs",
+   "label": "VictoriaLogs",
+   "description": "",
+   "type": "datasource",
+   "pluginId": "victoriametrics-logs-datasource",
+   "pluginName": "VictoriaLogs"
+  }
+ ],
+ "title": "Nginx",
+ "uid": "exordos-nginx",
+ "description": "Nginx traffic, errors, response time and clients from the access log (JSON to journald, shipped to VictoriaLogs), plus connection counters of nginx-prometheus-exporter.",
+ "tags": [
+  "exordos",
+  "nginx"
+ ],
+ "editable": true,
+ "graphTooltip": 1,
+ "schemaVersion": 39,
+ "version": 1,
+ "refresh": "1m",
+ "time": {
+  "from": "now-3h",
+  "to": "now"
+ },
+ "timezone": "",
+ "links": [],
+ "annotations": {
+  "list": []
+ },
+ "templating": {
+  "list": [
+   {
+    "name": "DS_Metrics",
+    "label": "Metrics",
+    "type": "datasource",
+    "query": "prometheus",
+    "current": {},
+    "hide": 0,
+    "includeAll": false,
+    "multi": false,
+    "options": [],
+    "refresh": 1,
+    "regex": ""
+   },
+   {
+    "name": "DS_Logs",
+    "label": "Logs",
+    "type": "datasource",
+    "query": "victoriametrics-logs-datasource",
+    "current": {},
+    "hide": 0,
+    "includeAll": false,
+    "multi": false,
+    "options": [],
+    "refresh": 1,
+    "regex": ""
+   },
+   {
+    "name": "node",
+    "label": "Node",
+    "type": "query",
+    "description": "Nodes that ship nginx access logs (journald _HOSTNAME); matches the instance label of the exporter metrics.",
+    "datasource": {
+     "type": "victoriametrics-logs-datasource",
+     "uid": "${DS_Logs}"
+    },
+    "definition": "_HOSTNAME of SYSLOG_IDENTIFIER:=nginx_access",
+    "query": {
+     "type": "fieldValue",
+     "field": "_HOSTNAME",
+     "query": "SYSLOG_IDENTIFIER:=nginx_access",
+     "limit": 500,
+     "refId": "VictoriaLogsVariableQueryEditor-VariableQuery"
+    },
+    "refresh": 2,
+    "multi": true,
+    "includeAll": true,
+    "current": {
+     "selected": true,
+     "text": [
+      "All"
+     ],
+     "value": [
+      "$__all"
+     ]
+    },
+    "sort": 1
+   },
+   {
+    "name": "domain",
+    "label": "Domain",
+    "type": "query",
+    "description": "nginx server_name of the request.",
+    "datasource": {
+     "type": "victoriametrics-logs-datasource",
+     "uid": "${DS_Logs}"
+    },
+    "definition": "server of SYSLOG_IDENTIFIER:=nginx_access",
+    "query": {
+     "type": "fieldValue",
+     "field": "server",
+     "query": "SYSLOG_IDENTIFIER:=nginx_access _HOSTNAME:$node | unpack_json fields (server)",
+     "limit": 500,
+     "refId": "VictoriaLogsVariableQueryEditor-VariableQuery"
+    },
+    "refresh": 2,
+    "multi": true,
+    "includeAll": true,
+    "current": {
+     "selected": true,
+     "text": [
+      "All"
+     ],
+     "value": [
+      "$__all"
+     ]
+    },
+    "sort": 1
+   },
+   {
+    "name": "search",
+    "label": "Filter",
+    "type": "textbox",
+    "description": "Extra LogsQL filter over the access log fields, e.g. status:502, path:\"/login\", user_agent:~\"bot\" or client_net:=\"198.51.100.0/24\"",
+    "query": "",
+    "current": {
+     "text": "",
+     "value": ""
+    },
+    "hide": 0
+   }
+  ]
+ },
+ "panels": [
+  {
+   "id": 1,
+   "type": "row",
+   "title": "Overview",
+   "collapsed": false,
+   "gridPos": {
+    "h": 1,
+    "w": 24,
+    "x": 0,
+    "y": 0
+   },
+   "panels": []
+  },
+  {
+   "id": 2,
+   "type": "stat",
+   "title": "Requests/s",
+   "description": "Average request rate over the selected range.",
+   "datasource": {
+    "type": "victoriametrics-logs-datasource",
+    "uid": "${DS_Logs}"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "victoriametrics-logs-datasource",
+      "uid": "${DS_Logs}"
+     },
+     "editorMode": "code",
+     "queryType": "stats",
+     "expr": "SYSLOG_IDENTIFIER:=nginx_access _HOSTNAME:$node | unpack_json fields (server, host, method, path, protocol, status, bytes_sent, request_time, upstream, upstream_status, upstream_response_time, referer_host, user_agent, client_net) | filter server:$domain $search | stats rate() rps"
+    }
+   ],
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "colorMode": "none",
+    "graphMode": "none",
+    "textMode": "value",
+    "justifyMode": "center",
+    "orientation": "auto",
+    "showPercentChange": false
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "reqps",
+     "noValue": "0",
+     "decimals": 2,
+     "color": {
+      "mode": "fixed",
+      "fixedColor": "text"
+     }
+    },
+    "overrides": []
+   },
+   "gridPos": {
+    "h": 4,
+    "w": 4,
+    "x": 0,
+    "y": 1
+   }
+  },
+  {
+   "id": 3,
+   "type": "stat",
+   "title": "4xx",
+   "description": "Share of client errors (4xx) among all requests.",
+   "datasource": {
+    "type": "victoriametrics-logs-datasource",
+    "uid": "${DS_Logs}"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "victoriametrics-logs-datasource",
+      "uid": "${DS_Logs}"
+     },
+     "editorMode": "code",
+     "queryType": "stats",
+     "expr": "SYSLOG_IDENTIFIER:=nginx_access _HOSTNAME:$node | unpack_json fields (server, host, method, path, protocol, status, bytes_sent, request_time, upstream, upstream_status, upstream_response_time, referer_host, user_agent, client_net) | filter server:$domain $search | stats count() if (status:4*) e, count() t | math e/t*100 as pct | delete e, t"
+    }
+   ],
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "colorMode": "value",
+    "graphMode": "none",
+    "textMode": "value",
+    "justifyMode": "center",
+    "orientation": "auto",
+    "showPercentChange": false
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "percent",
+     "noValue": "0",
+     "decimals": 1,
+     "color": {
+      "mode": "thresholds"
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": null
+       },
+       {
+        "color": "orange",
+        "value": 5
+       },
+       {
+        "color": "red",
+        "value": 20
+       }
+      ]
+     }
+    },
+    "overrides": []
+   },
+   "gridPos": {
+    "h": 4,
+    "w": 4,
+    "x": 4,
+    "y": 1
+   }
+  },
+  {
+   "id": 4,
+   "type": "stat",
+   "title": "5xx",
+   "description": "Share of server errors (5xx) among all requests.",
+   "datasource": {
+    "type": "victoriametrics-logs-datasource",
+    "uid": "${DS_Logs}"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "victoriametrics-logs-datasource",
+      "uid": "${DS_Logs}"
+     },
+     "editorMode": "code",
+     "queryType": "stats",
+     "expr": "SYSLOG_IDENTIFIER:=nginx_access _HOSTNAME:$node | unpack_json fields (server, host, method, path, protocol, status, bytes_sent, request_time, upstream, upstream_status, upstream_response_time, referer_host, user_agent, client_net) | filter server:$domain $search | stats count() if (status:5*) e, count() t | math e/t*100 as pct | delete e, t"
+    }
+   ],
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "colorMode": "value",
+    "graphMode": "none",
+    "textMode": "value",
+    "justifyMode": "center",
+    "orientation": "auto",
+    "showPercentChange": false
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "percent",
+     "noValue": "0",
+     "decimals": 2,
+     "color": {
+      "mode": "thresholds"
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": null
+       },
+       {
+        "color": "orange",
+        "value": 1
+       },
+       {
+        "color": "red",
+        "value": 5
+       }
+      ]
+     }
+    },
+    "overrides": []
+   },
+   "gridPos": {
+    "h": 4,
+    "w": 4,
+    "x": 8,
+    "y": 1
+   }
+  },
+  {
+   "id": 5,
+   "type": "stat",
+   "title": "p95 response time",
+   "description": "95th percentile of request_time: from the first byte read from the client to the last byte sent.",
+   "datasource": {
+    "type": "victoriametrics-logs-datasource",
+    "uid": "${DS_Logs}"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "victoriametrics-logs-datasource",
+      "uid": "${DS_Logs}"
+     },
+     "editorMode": "code",
+     "queryType": "stats",
+     "expr": "SYSLOG_IDENTIFIER:=nginx_access _HOSTNAME:$node | unpack_json fields (server, host, method, path, protocol, status, bytes_sent, request_time, upstream, upstream_status, upstream_response_time, referer_host, user_agent, client_net) | filter server:$domain $search | stats quantile(0.95, request_time) p95"
+    }
+   ],
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "colorMode": "value",
+    "graphMode": "none",
+    "textMode": "value",
+    "justifyMode": "center",
+    "orientation": "auto",
+    "showPercentChange": false
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "s",
+     "noValue": "-",
+     "color": {
+      "mode": "thresholds"
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": null
+       },
+       {
+        "color": "orange",
+        "value": 0.5
+       },
+       {
+        "color": "red",
+        "value": 2
+       }
+      ]
+     }
+    },
+    "overrides": []
+   },
+   "gridPos": {
+    "h": 4,
+    "w": 4,
+    "x": 12,
+    "y": 1
+   }
+  },
+  {
+   "id": 6,
+   "type": "stat",
+   "title": "Rate limited",
+   "description": "Requests rejected with 429 (limit_req_status 429 / limit_conn_status 429).",
+   "datasource": {
+    "type": "victoriametrics-logs-datasource",
+    "uid": "${DS_Logs}"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "victoriametrics-logs-datasource",
+      "uid": "${DS_Logs}"
+     },
+     "editorMode": "code",
+     "queryType": "stats",
+     "expr": "SYSLOG_IDENTIFIER:=nginx_access _HOSTNAME:$node | unpack_json fields (server, host, method, path, protocol, status, bytes_sent, request_time, upstream, upstream_status, upstream_response_time, referer_host, user_agent, client_net) | filter server:$domain $search | stats count() if (status:=429) n"
+    }
+   ],
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "colorMode": "value",
+    "graphMode": "none",
+    "textMode": "value",
+    "justifyMode": "center",
+    "orientation": "auto",
+    "showPercentChange": false
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "noValue": "0",
+     "decimals": 0,
+     "color": {
+      "mode": "thresholds"
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "text",
+        "value": null
+       },
+       {
+        "color": "purple",
+        "value": 1
+       }
+      ]
+     }
+    },
+    "overrides": []
+   },
+   "gridPos": {
+    "h": 4,
+    "w": 4,
+    "x": 16,
+    "y": 1
+   }
+  },
+  {
+   "id": 7,
+   "type": "stat",
+   "title": "Client networks",
+   "description": "Distinct client networks (/24 IPv4, /64 IPv6). Needs the opt-in client_net field of the nginx log format (see HOWTO); empty without it.",
+   "datasource": {
+    "type": "victoriametrics-logs-datasource",
+    "uid": "${DS_Logs}"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "victoriametrics-logs-datasource",
+      "uid": "${DS_Logs}"
+     },
+     "editorMode": "code",
+     "queryType": "stats",
+     "expr": "SYSLOG_IDENTIFIER:=nginx_access _HOSTNAME:$node | unpack_json fields (server, host, method, path, protocol, status, bytes_sent, request_time, upstream, upstream_status, upstream_response_time, referer_host, user_agent, client_net) | filter server:$domain $search | filter client_net:* | stats count_uniq(client_net) nets"
+    }
+   ],
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "colorMode": "none",
+    "graphMode": "none",
+    "textMode": "value",
+    "justifyMode": "center",
+    "orientation": "auto",
+    "showPercentChange": false
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "noValue": "0",
+     "decimals": 0,
+     "color": {
+      "mode": "fixed",
+      "fixedColor": "text"
+     }
+    },
+    "overrides": []
+   },
+   "gridPos": {
+    "h": 4,
+    "w": 4,
+    "x": 20,
+    "y": 1
+   }
+  },
+  {
+   "id": 8,
+   "type": "row",
+   "title": "Traffic",
+   "collapsed": false,
+   "gridPos": {
+    "h": 1,
+    "w": 24,
+    "x": 0,
+    "y": 5
+   },
+   "panels": []
+  },
+  {
+   "id": 9,
+   "type": "timeseries",
+   "title": "Requests/s by domain",
+   "description": "Request rate per domain (nginx server_name, so random Host headers of an attack do not explode the legend).",
+   "datasource": {
+    "type": "victoriametrics-logs-datasource",
+    "uid": "${DS_Logs}"
+   },
+   "interval": "1m",
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "victoriametrics-logs-datasource",
+      "uid": "${DS_Logs}"
+     },
+     "editorMode": "code",
+     "queryType": "statsRange",
+     "expr": "SYSLOG_IDENTIFIER:=nginx_access _HOSTNAME:$node | unpack_json fields (server, host, method, path, protocol, status, bytes_sent, request_time, upstream, upstream_status, upstream_response_time, referer_host, user_agent, client_net) | filter server:$domain $search | stats by (server) rate() rps",
+     "legendFormat": "{{server}}"
+    }
+   ],
+   "options": {
+    "legend": {
+     "showLegend": true,
+     "displayMode": "list",
+     "placement": "bottom"
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "reqps",
+     "custom": {
+      "drawStyle": "line",
+      "lineWidth": 1,
+      "fillOpacity": 25,
+      "showPoints": "never",
+      "spanNulls": false,
+      "stacking": {
+       "mode": "normal",
+       "group": "A"
+      }
+     }
+    },
+    "overrides": []
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 0,
+    "y": 6
+   }
+  },
+  {
+   "id": 10,
+   "type": "timeseries",
+   "title": "Responses/s by status",
+   "description": "Response rate per HTTP status code.",
+   "datasource": {
+    "type": "victoriametrics-logs-datasource",
+    "uid": "${DS_Logs}"
+   },
+   "interval": "1m",
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "victoriametrics-logs-datasource",
+      "uid": "${DS_Logs}"
+     },
+     "editorMode": "code",
+     "queryType": "statsRange",
+     "expr": "SYSLOG_IDENTIFIER:=nginx_access _HOSTNAME:$node | unpack_json fields (server, host, method, path, protocol, status, bytes_sent, request_time, upstream, upstream_status, upstream_response_time, referer_host, user_agent, client_net) | filter server:$domain $search | stats by (status) rate() rps",
+     "legendFormat": "{{status}}"
+    }
+   ],
+   "options": {
+    "legend": {
+     "showLegend": true,
+     "displayMode": "list",
+     "placement": "bottom"
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "reqps",
+     "custom": {
+      "drawStyle": "line",
+      "lineWidth": 1,
+      "fillOpacity": 25,
+      "showPoints": "never",
+      "spanNulls": false,
+      "stacking": {
+       "mode": "normal",
+       "group": "A"
+      }
+     }
+    },
+    "overrides": [
+     {
+      "matcher": {
+       "id": "byRegexp",
+       "options": "^2"
+      },
+      "properties": [
+       {
+        "id": "color",
+        "value": {
+         "mode": "fixed",
+         "fixedColor": "green"
+        }
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byRegexp",
+       "options": "^3"
+      },
+      "properties": [
+       {
+        "id": "color",
+        "value": {
+         "mode": "fixed",
+         "fixedColor": "blue"
+        }
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byRegexp",
+       "options": "^4"
+      },
+      "properties": [
+       {
+        "id": "color",
+        "value": {
+         "mode": "fixed",
+         "fixedColor": "orange"
+        }
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byRegexp",
+       "options": "^429$"
+      },
+      "properties": [
+       {
+        "id": "color",
+        "value": {
+         "mode": "fixed",
+         "fixedColor": "purple"
+        }
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byRegexp",
+       "options": "^499$"
+      },
+      "properties": [
+       {
+        "id": "color",
+        "value": {
+         "mode": "fixed",
+         "fixedColor": "yellow"
+        }
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byRegexp",
+       "options": "^5"
+      },
+      "properties": [
+       {
+        "id": "color",
+        "value": {
+         "mode": "fixed",
+         "fixedColor": "red"
+        }
+       }
+      ]
+     }
+    ]
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 12,
+    "y": 6
+   }
+  },
+  {
+   "id": 11,
+   "type": "table",
+   "title": "Domains",
+   "description": "Every domain over the selected range. Click a domain to narrow the dashboard to it.",
+   "datasource": {
+    "type": "victoriametrics-logs-datasource",
+    "uid": "${DS_Logs}"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "victoriametrics-logs-datasource",
+      "uid": "${DS_Logs}"
+     },
+     "editorMode": "code",
+     "queryType": "instant",
+     "expr": "SYSLOG_IDENTIFIER:=nginx_access _HOSTNAME:$node | unpack_json fields (server, host, method, path, protocol, status, bytes_sent, request_time, upstream, upstream_status, upstream_response_time, referer_host, user_agent, client_net) | filter server:$domain $search | stats by (server) count() requests, rate() rps, count() if (status:4*) e4, count() if (status:5*) e5, quantile(0.95, request_time) p95, sum(bytes_sent) bytes | math e4/requests*100 as pct4, e5/requests*100 as pct5 | sort by (requests desc) | limit 50"
+    }
+   ],
+   "transformations": [
+    {
+     "id": "extractFields",
+     "options": {
+      "source": "labels",
+      "format": "json",
+      "replace": false,
+      "keepTime": false
+     }
+    },
+    {
+     "id": "organize",
+     "options": {
+      "excludeByName": {
+       "Time": true,
+       "Line": true,
+       "id": true,
+       "labels": true,
+       "streams": true,
+       "streamId": true,
+       "tsNs": true,
+       "detected_level": true,
+       "level": true,
+       "e4": true,
+       "e5": true
+      },
+      "indexByName": {
+       "server": 0,
+       "requests": 1,
+       "rps": 2,
+       "pct4": 3,
+       "pct5": 4,
+       "p95": 5,
+       "bytes": 6,
+       "e4": 7,
+       "e5": 8
+      },
+      "renameByName": {
+       "server": "Domain",
+       "requests": "Requests",
+       "rps": "Requests/s",
+       "pct4": "4xx",
+       "pct5": "5xx",
+       "p95": "p95 time",
+       "bytes": "Sent",
+       "e4": "e4",
+       "e5": "e5"
+      }
+     }
+    },
+    {
+     "id": "convertFieldType",
+     "options": {
+      "fields": {},
+      "conversions": [
+       {
+        "targetField": "Requests",
+        "destinationType": "number"
+       },
+       {
+        "targetField": "Requests/s",
+        "destinationType": "number"
+       },
+       {
+        "targetField": "4xx",
+        "destinationType": "number"
+       },
+       {
+        "targetField": "5xx",
+        "destinationType": "number"
+       },
+       {
+        "targetField": "p95 time",
+        "destinationType": "number"
+       },
+       {
+        "targetField": "Sent",
+        "destinationType": "number"
+       }
+      ]
+     }
+    },
+    {
+     "id": "sortBy",
+     "options": {
+      "sort": [
+       {
+        "field": "Requests",
+        "desc": true
+       }
+      ]
+     }
+    }
+   ],
+   "options": {
+    "showHeader": true,
+    "cellHeight": "sm",
+    "footer": {
+     "show": false
+    }
+   },
+   "fieldConfig": {
+    "defaults": {
+     "custom": {
+      "align": "auto",
+      "filterable": false
+     }
+    },
+    "overrides": [
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Domain"
+      },
+      "properties": [
+       {
+        "id": "links",
+        "value": [
+         {
+          "title": "Show only ${__value.raw}",
+          "url": "/d/exordos-nginx/nginx?${__url_time_range}&${node:queryparam}&var-domain=${__value.raw}"
+         }
+        ]
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Requests"
+      },
+      "properties": [
+       {
+        "id": "unit",
+        "value": "short"
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Requests/s"
+      },
+      "properties": [
+       {
+        "id": "unit",
+        "value": "reqps"
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "4xx"
+      },
+      "properties": [
+       {
+        "id": "unit",
+        "value": "percent"
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "5xx"
+      },
+      "properties": [
+       {
+        "id": "unit",
+        "value": "percent"
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "p95 time"
+      },
+      "properties": [
+       {
+        "id": "unit",
+        "value": "s"
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Sent"
+      },
+      "properties": [
+       {
+        "id": "unit",
+        "value": "bytes"
+       }
+      ]
+     }
+    ]
+   },
+   "gridPos": {
+    "h": 7,
+    "w": 24,
+    "x": 0,
+    "y": 14
+   }
+  },
+  {
+   "id": 12,
+   "type": "timeseries",
+   "title": "Traffic sent by domain",
+   "description": "Response body bytes sent per second.",
+   "datasource": {
+    "type": "victoriametrics-logs-datasource",
+    "uid": "${DS_Logs}"
+   },
+   "interval": "1m",
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "victoriametrics-logs-datasource",
+      "uid": "${DS_Logs}"
+     },
+     "editorMode": "code",
+     "queryType": "statsRange",
+     "expr": "SYSLOG_IDENTIFIER:=nginx_access _HOSTNAME:$node | unpack_json fields (server, host, method, path, protocol, status, bytes_sent, request_time, upstream, upstream_status, upstream_response_time, referer_host, user_agent, client_net) | filter server:$domain $search | stats by (server) rate_sum(bytes_sent) bps",
+     "legendFormat": "{{server}}"
+    }
+   ],
+   "options": {
+    "legend": {
+     "showLegend": true,
+     "displayMode": "list",
+     "placement": "bottom"
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "Bps",
+     "custom": {
+      "drawStyle": "line",
+      "lineWidth": 1,
+      "fillOpacity": 25,
+      "showPoints": "never",
+      "spanNulls": false,
+      "stacking": {
+       "mode": "normal",
+       "group": "A"
+      }
+     }
+    },
+    "overrides": []
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 0,
+    "y": 21
+   }
+  },
+  {
+   "id": 13,
+   "type": "table",
+   "title": "Top paths",
+   "description": "Most requested paths (without the query string, which is never logged).",
+   "datasource": {
+    "type": "victoriametrics-logs-datasource",
+    "uid": "${DS_Logs}"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "victoriametrics-logs-datasource",
+      "uid": "${DS_Logs}"
+     },
+     "editorMode": "code",
+     "queryType": "instant",
+     "expr": "SYSLOG_IDENTIFIER:=nginx_access _HOSTNAME:$node | unpack_json fields (server, host, method, path, protocol, status, bytes_sent, request_time, upstream, upstream_status, upstream_response_time, referer_host, user_agent, client_net) | filter server:$domain $search | stats by (server, path) count() requests, quantile(0.95, request_time) p95 | sort by (requests desc) | limit 20"
+    }
+   ],
+   "transformations": [
+    {
+     "id": "extractFields",
+     "options": {
+      "source": "labels",
+      "format": "json",
+      "replace": false,
+      "keepTime": false
+     }
+    },
+    {
+     "id": "organize",
+     "options": {
+      "excludeByName": {
+       "Time": true,
+       "Line": true,
+       "id": true,
+       "labels": true,
+       "streams": true,
+       "streamId": true,
+       "tsNs": true,
+       "detected_level": true,
+       "level": true
+      },
+      "indexByName": {
+       "server": 0,
+       "path": 1,
+       "requests": 2,
+       "p95": 3
+      },
+      "renameByName": {
+       "server": "Domain",
+       "path": "Path",
+       "requests": "Requests",
+       "p95": "p95 time"
+      }
+     }
+    },
+    {
+     "id": "convertFieldType",
+     "options": {
+      "fields": {},
+      "conversions": [
+       {
+        "targetField": "Requests",
+        "destinationType": "number"
+       },
+       {
+        "targetField": "p95 time",
+        "destinationType": "number"
+       }
+      ]
+     }
+    },
+    {
+     "id": "sortBy",
+     "options": {
+      "sort": [
+       {
+        "field": "Requests",
+        "desc": true
+       }
+      ]
+     }
+    }
+   ],
+   "options": {
+    "showHeader": true,
+    "cellHeight": "sm",
+    "footer": {
+     "show": false
+    }
+   },
+   "fieldConfig": {
+    "defaults": {
+     "custom": {
+      "align": "auto",
+      "filterable": false
+     }
+    },
+    "overrides": [
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Requests"
+      },
+      "properties": [
+       {
+        "id": "unit",
+        "value": "short"
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "p95 time"
+      },
+      "properties": [
+       {
+        "id": "unit",
+        "value": "s"
+       }
+      ]
+     }
+    ]
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 12,
+    "y": 21
+   }
+  },
+  {
+   "id": 14,
+   "type": "row",
+   "title": "Errors",
+   "collapsed": false,
+   "gridPos": {
+    "h": 1,
+    "w": 24,
+    "x": 0,
+    "y": 29
+   },
+   "panels": []
+  },
+  {
+   "id": 15,
+   "type": "timeseries",
+   "title": "Error rate",
+   "description": "Share of 4xx and 5xx responses.",
+   "datasource": {
+    "type": "victoriametrics-logs-datasource",
+    "uid": "${DS_Logs}"
+   },
+   "interval": "1m",
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "victoriametrics-logs-datasource",
+      "uid": "${DS_Logs}"
+     },
+     "editorMode": "code",
+     "queryType": "statsRange",
+     "expr": "SYSLOG_IDENTIFIER:=nginx_access _HOSTNAME:$node | unpack_json fields (server, host, method, path, protocol, status, bytes_sent, request_time, upstream, upstream_status, upstream_response_time, referer_host, user_agent, client_net) | filter server:$domain $search | stats count() if (status:4*) e4, count() if (status:5*) e5, count() t | math e4/t*100 as \"4xx\", e5/t*100 as \"5xx\" | delete e4, e5, t"
+    }
+   ],
+   "options": {
+    "legend": {
+     "showLegend": true,
+     "displayMode": "list",
+     "placement": "bottom"
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "percent",
+     "custom": {
+      "drawStyle": "line",
+      "lineWidth": 1,
+      "fillOpacity": 10,
+      "showPoints": "never",
+      "spanNulls": false,
+      "stacking": {
+       "mode": "none",
+       "group": "A"
+      }
+     }
+    },
+    "overrides": [
+     {
+      "matcher": {
+       "id": "byRegexp",
+       "options": "^4xx$"
+      },
+      "properties": [
+       {
+        "id": "color",
+        "value": {
+         "mode": "fixed",
+         "fixedColor": "orange"
+        }
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byRegexp",
+       "options": "^5xx$"
+      },
+      "properties": [
+       {
+        "id": "color",
+        "value": {
+         "mode": "fixed",
+         "fixedColor": "red"
+        }
+       }
+      ]
+     }
+    ]
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 0,
+    "y": 30
+   }
+  },
+  {
+   "id": 16,
+   "type": "timeseries",
+   "title": "Backend errors by upstream",
+   "description": "5xx answers of upstreams (upstream_status), per upstream address. Separates a failing backend from errors nginx produces itself.",
+   "datasource": {
+    "type": "victoriametrics-logs-datasource",
+    "uid": "${DS_Logs}"
+   },
+   "interval": "1m",
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "victoriametrics-logs-datasource",
+      "uid": "${DS_Logs}"
+     },
+     "editorMode": "code",
+     "queryType": "statsRange",
+     "expr": "SYSLOG_IDENTIFIER:=nginx_access _HOSTNAME:$node | unpack_json fields (server, host, method, path, protocol, status, bytes_sent, request_time, upstream, upstream_status, upstream_response_time, referer_host, user_agent, client_net) | filter server:$domain $search | filter upstream_status:~\"5[0-9][0-9]\" | stats by (upstream, upstream_status) rate() rps",
+     "legendFormat": "{{upstream}} {{upstream_status}}"
+    }
+   ],
+   "options": {
+    "legend": {
+     "showLegend": true,
+     "displayMode": "list",
+     "placement": "bottom"
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "reqps",
+     "custom": {
+      "drawStyle": "line",
+      "lineWidth": 1,
+      "fillOpacity": 10,
+      "showPoints": "never",
+      "spanNulls": false,
+      "stacking": {
+       "mode": "none",
+       "group": "A"
+      }
+     }
+    },
+    "overrides": []
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 12,
+    "y": 30
+   }
+  },
+  {
+   "id": 17,
+   "type": "table",
+   "title": "Top errors",
+   "description": "Most frequent error responses (status >= 400). 499: the client closed the connection before the answer; 502/504: the upstream failed or timed out; 429: rate limited.",
+   "datasource": {
+    "type": "victoriametrics-logs-datasource",
+    "uid": "${DS_Logs}"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "victoriametrics-logs-datasource",
+      "uid": "${DS_Logs}"
+     },
+     "editorMode": "code",
+     "queryType": "instant",
+     "expr": "SYSLOG_IDENTIFIER:=nginx_access _HOSTNAME:$node | unpack_json fields (server, host, method, path, protocol, status, bytes_sent, request_time, upstream, upstream_status, upstream_response_time, referer_host, user_agent, client_net) | filter server:$domain $search | filter status:>=400 | stats by (server, method, path, status) count() hits | sort by (hits desc) | limit 25"
+    }
+   ],
+   "transformations": [
+    {
+     "id": "extractFields",
+     "options": {
+      "source": "labels",
+      "format": "json",
+      "replace": false,
+      "keepTime": false
+     }
+    },
+    {
+     "id": "organize",
+     "options": {
+      "excludeByName": {
+       "Time": true,
+       "Line": true,
+       "id": true,
+       "labels": true,
+       "streams": true,
+       "streamId": true,
+       "tsNs": true,
+       "detected_level": true,
+       "level": true
+      },
+      "indexByName": {
+       "server": 0,
+       "method": 1,
+       "path": 2,
+       "status": 3,
+       "hits": 4
+      },
+      "renameByName": {
+       "server": "Domain",
+       "method": "Method",
+       "path": "Path",
+       "status": "Status",
+       "hits": "Requests"
+      }
+     }
+    },
+    {
+     "id": "convertFieldType",
+     "options": {
+      "fields": {},
+      "conversions": [
+       {
+        "targetField": "Requests",
+        "destinationType": "number"
+       }
+      ]
+     }
+    },
+    {
+     "id": "sortBy",
+     "options": {
+      "sort": [
+       {
+        "field": "Requests",
+        "desc": true
+       }
+      ]
+     }
+    }
+   ],
+   "options": {
+    "showHeader": true,
+    "cellHeight": "sm",
+    "footer": {
+     "show": false
+    }
+   },
+   "fieldConfig": {
+    "defaults": {
+     "custom": {
+      "align": "auto",
+      "filterable": false
+     }
+    },
+    "overrides": [
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Requests"
+      },
+      "properties": [
+       {
+        "id": "unit",
+        "value": "short"
+       }
+      ]
+     }
+    ]
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 24,
+    "x": 0,
+    "y": 38
+   }
+  },
+  {
+   "id": 18,
+   "type": "row",
+   "title": "Performance",
+   "collapsed": false,
+   "gridPos": {
+    "h": 1,
+    "w": 24,
+    "x": 0,
+    "y": 46
+   },
+   "panels": []
+  },
+  {
+   "id": 19,
+   "type": "timeseries",
+   "title": "Response time",
+   "description": "Percentiles of request_time over all requests.",
+   "datasource": {
+    "type": "victoriametrics-logs-datasource",
+    "uid": "${DS_Logs}"
+   },
+   "interval": "1m",
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "victoriametrics-logs-datasource",
+      "uid": "${DS_Logs}"
+     },
+     "editorMode": "code",
+     "queryType": "statsRange",
+     "expr": "SYSLOG_IDENTIFIER:=nginx_access _HOSTNAME:$node | unpack_json fields (server, host, method, path, protocol, status, bytes_sent, request_time, upstream, upstream_status, upstream_response_time, referer_host, user_agent, client_net) | filter server:$domain $search | stats quantile(0.5, request_time) p50, quantile(0.95, request_time) p95, quantile(0.99, request_time) p99"
+    }
+   ],
+   "options": {
+    "legend": {
+     "showLegend": true,
+     "displayMode": "list",
+     "placement": "bottom"
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "s",
+     "custom": {
+      "drawStyle": "line",
+      "lineWidth": 1,
+      "fillOpacity": 10,
+      "showPoints": "never",
+      "spanNulls": false,
+      "stacking": {
+       "mode": "none",
+       "group": "A"
+      }
+     }
+    },
+    "overrides": []
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 0,
+    "y": 47
+   }
+  },
+  {
+   "id": 20,
+   "type": "timeseries",
+   "title": "p95 response time by domain",
+   "description": "95th percentile of request_time per domain.",
+   "datasource": {
+    "type": "victoriametrics-logs-datasource",
+    "uid": "${DS_Logs}"
+   },
+   "interval": "1m",
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "victoriametrics-logs-datasource",
+      "uid": "${DS_Logs}"
+     },
+     "editorMode": "code",
+     "queryType": "statsRange",
+     "expr": "SYSLOG_IDENTIFIER:=nginx_access _HOSTNAME:$node | unpack_json fields (server, host, method, path, protocol, status, bytes_sent, request_time, upstream, upstream_status, upstream_response_time, referer_host, user_agent, client_net) | filter server:$domain $search | stats by (server) quantile(0.95, request_time) p95",
+     "legendFormat": "{{server}}"
+    }
+   ],
+   "options": {
+    "legend": {
+     "showLegend": true,
+     "displayMode": "list",
+     "placement": "bottom"
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "s",
+     "custom": {
+      "drawStyle": "line",
+      "lineWidth": 1,
+      "fillOpacity": 10,
+      "showPoints": "never",
+      "spanNulls": false,
+      "stacking": {
+       "mode": "none",
+       "group": "A"
+      }
+     }
+    },
+    "overrides": []
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 12,
+    "y": 47
+   }
+  },
+  {
+   "id": 21,
+   "type": "timeseries",
+   "title": "p95 upstream response time",
+   "description": "95th percentile of upstream_response_time per upstream address: how long the backend itself took.",
+   "datasource": {
+    "type": "victoriametrics-logs-datasource",
+    "uid": "${DS_Logs}"
+   },
+   "interval": "1m",
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "victoriametrics-logs-datasource",
+      "uid": "${DS_Logs}"
+     },
+     "editorMode": "code",
+     "queryType": "statsRange",
+     "expr": "SYSLOG_IDENTIFIER:=nginx_access _HOSTNAME:$node | unpack_json fields (server, host, method, path, protocol, status, bytes_sent, request_time, upstream, upstream_status, upstream_response_time, referer_host, user_agent, client_net) | filter server:$domain $search | filter upstream:* | stats by (upstream) quantile(0.95, upstream_response_time) p95",
+     "legendFormat": "{{upstream}}"
+    }
+   ],
+   "options": {
+    "legend": {
+     "showLegend": true,
+     "displayMode": "list",
+     "placement": "bottom"
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "s",
+     "custom": {
+      "drawStyle": "line",
+      "lineWidth": 1,
+      "fillOpacity": 10,
+      "showPoints": "never",
+      "spanNulls": false,
+      "stacking": {
+       "mode": "none",
+       "group": "A"
+      }
+     }
+    },
+    "overrides": []
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 0,
+    "y": 55
+   }
+  },
+  {
+   "id": 22,
+   "type": "table",
+   "title": "Slowest paths",
+   "description": "Paths with the highest p95 response time (at least 10 requests in range).",
+   "datasource": {
+    "type": "victoriametrics-logs-datasource",
+    "uid": "${DS_Logs}"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "victoriametrics-logs-datasource",
+      "uid": "${DS_Logs}"
+     },
+     "editorMode": "code",
+     "queryType": "instant",
+     "expr": "SYSLOG_IDENTIFIER:=nginx_access _HOSTNAME:$node | unpack_json fields (server, host, method, path, protocol, status, bytes_sent, request_time, upstream, upstream_status, upstream_response_time, referer_host, user_agent, client_net) | filter server:$domain $search | stats by (server, path) count() requests, quantile(0.95, request_time) p95, max(request_time) max | filter requests:>=10 | sort by (p95 desc) | limit 20"
+    }
+   ],
+   "transformations": [
+    {
+     "id": "extractFields",
+     "options": {
+      "source": "labels",
+      "format": "json",
+      "replace": false,
+      "keepTime": false
+     }
+    },
+    {
+     "id": "organize",
+     "options": {
+      "excludeByName": {
+       "Time": true,
+       "Line": true,
+       "id": true,
+       "labels": true,
+       "streams": true,
+       "streamId": true,
+       "tsNs": true,
+       "detected_level": true,
+       "level": true
+      },
+      "indexByName": {
+       "server": 0,
+       "path": 1,
+       "requests": 2,
+       "p95": 3,
+       "max": 4
+      },
+      "renameByName": {
+       "server": "Domain",
+       "path": "Path",
+       "requests": "Requests",
+       "p95": "p95 time",
+       "max": "Max time"
+      }
+     }
+    },
+    {
+     "id": "convertFieldType",
+     "options": {
+      "fields": {},
+      "conversions": [
+       {
+        "targetField": "Requests",
+        "destinationType": "number"
+       },
+       {
+        "targetField": "p95 time",
+        "destinationType": "number"
+       },
+       {
+        "targetField": "Max time",
+        "destinationType": "number"
+       }
+      ]
+     }
+    },
+    {
+     "id": "sortBy",
+     "options": {
+      "sort": [
+       {
+        "field": "p95 time",
+        "desc": true
+       }
+      ]
+     }
+    }
+   ],
+   "options": {
+    "showHeader": true,
+    "cellHeight": "sm",
+    "footer": {
+     "show": false
+    }
+   },
+   "fieldConfig": {
+    "defaults": {
+     "custom": {
+      "align": "auto",
+      "filterable": false
+     }
+    },
+    "overrides": [
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Requests"
+      },
+      "properties": [
+       {
+        "id": "unit",
+        "value": "short"
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "p95 time"
+      },
+      "properties": [
+       {
+        "id": "unit",
+        "value": "s"
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Max time"
+      },
+      "properties": [
+       {
+        "id": "unit",
+        "value": "s"
+       }
+      ]
+     }
+    ]
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 12,
+    "y": 55
+   }
+  },
+  {
+   "id": 23,
+   "type": "row",
+   "title": "Clients",
+   "collapsed": false,
+   "gridPos": {
+    "h": 1,
+    "w": 24,
+    "x": 0,
+    "y": 63
+   },
+   "panels": []
+  },
+  {
+   "id": 24,
+   "type": "table",
+   "title": "Top client networks",
+   "description": "Networks sending the most requests; during an attack they are the candidates for blocking. Click a network to filter the logs and panels by it. Needs the opt-in client_net field of the nginx log format (see HOWTO); empty without it.",
+   "datasource": {
+    "type": "victoriametrics-logs-datasource",
+    "uid": "${DS_Logs}"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "victoriametrics-logs-datasource",
+      "uid": "${DS_Logs}"
+     },
+     "editorMode": "code",
+     "queryType": "instant",
+     "expr": "SYSLOG_IDENTIFIER:=nginx_access _HOSTNAME:$node | unpack_json fields (server, host, method, path, protocol, status, bytes_sent, request_time, upstream, upstream_status, upstream_response_time, referer_host, user_agent, client_net) | filter server:$domain $search | filter client_net:* | stats by (client_net) count() requests, count() if (status:>=400) errors, count() if (status:=429) limited, count_uniq(path) paths | sort by (requests desc) | limit 20"
+    }
+   ],
+   "transformations": [
+    {
+     "id": "extractFields",
+     "options": {
+      "source": "labels",
+      "format": "json",
+      "replace": false,
+      "keepTime": false
+     }
+    },
+    {
+     "id": "organize",
+     "options": {
+      "excludeByName": {
+       "Time": true,
+       "Line": true,
+       "id": true,
+       "labels": true,
+       "streams": true,
+       "streamId": true,
+       "tsNs": true,
+       "detected_level": true,
+       "level": true
+      },
+      "indexByName": {
+       "client_net": 0,
+       "requests": 1,
+       "errors": 2,
+       "limited": 3,
+       "paths": 4
+      },
+      "renameByName": {
+       "client_net": "Network",
+       "requests": "Requests",
+       "errors": "Errors",
+       "limited": "Rate limited",
+       "paths": "Distinct paths"
+      }
+     }
+    },
+    {
+     "id": "convertFieldType",
+     "options": {
+      "fields": {},
+      "conversions": [
+       {
+        "targetField": "Requests",
+        "destinationType": "number"
+       },
+       {
+        "targetField": "Errors",
+        "destinationType": "number"
+       },
+       {
+        "targetField": "Rate limited",
+        "destinationType": "number"
+       },
+       {
+        "targetField": "Distinct paths",
+        "destinationType": "number"
+       }
+      ]
+     }
+    },
+    {
+     "id": "sortBy",
+     "options": {
+      "sort": [
+       {
+        "field": "Requests",
+        "desc": true
+       }
+      ]
+     }
+    }
+   ],
+   "options": {
+    "showHeader": true,
+    "cellHeight": "sm",
+    "footer": {
+     "show": false
+    }
+   },
+   "fieldConfig": {
+    "defaults": {
+     "custom": {
+      "align": "auto",
+      "filterable": false
+     }
+    },
+    "overrides": [
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Network"
+      },
+      "properties": [
+       {
+        "id": "links",
+        "value": [
+         {
+          "title": "Filter by ${__value.raw}",
+          "url": "/d/exordos-nginx/nginx?${__url_time_range}&${node:queryparam}&${domain:queryparam}&var-search=client_net:%3D%22${__value.raw}%22"
+         }
+        ]
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Requests"
+      },
+      "properties": [
+       {
+        "id": "unit",
+        "value": "short"
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Errors"
+      },
+      "properties": [
+       {
+        "id": "unit",
+        "value": "short"
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Rate limited"
+      },
+      "properties": [
+       {
+        "id": "unit",
+        "value": "short"
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Distinct paths"
+      },
+      "properties": [
+       {
+        "id": "unit",
+        "value": "short"
+       }
+      ]
+     }
+    ]
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 0,
+    "y": 64
+   }
+  },
+  {
+   "id": 25,
+   "type": "timeseries",
+   "title": "Requests/s of top client networks",
+   "description": "Request rate of the 5 busiest client networks of the range. Needs the opt-in client_net field of the nginx log format (see HOWTO); empty without it.",
+   "datasource": {
+    "type": "victoriametrics-logs-datasource",
+    "uid": "${DS_Logs}"
+   },
+   "interval": "1m",
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "victoriametrics-logs-datasource",
+      "uid": "${DS_Logs}"
+     },
+     "editorMode": "code",
+     "queryType": "statsRange",
+     "expr": "SYSLOG_IDENTIFIER:=nginx_access _HOSTNAME:$node | unpack_json fields (server, host, method, path, protocol, status, bytes_sent, request_time, upstream, upstream_status, upstream_response_time, referer_host, user_agent, client_net) | filter server:$domain $search | filter client_net:in(SYSLOG_IDENTIFIER:=nginx_access _HOSTNAME:$node | unpack_json fields (server, host, method, path, protocol, status, bytes_sent, request_time, upstream, upstream_status, upstream_response_time, referer_host, user_agent, client_net) | filter server:$domain $search | filter client_net:* | top 5 by (client_net) | fields client_net) | stats by (client_net) rate() rps",
+     "legendFormat": "{{client_net}}"
+    }
+   ],
+   "options": {
+    "legend": {
+     "showLegend": true,
+     "displayMode": "list",
+     "placement": "bottom"
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "reqps",
+     "custom": {
+      "drawStyle": "line",
+      "lineWidth": 1,
+      "fillOpacity": 10,
+      "showPoints": "never",
+      "spanNulls": false,
+      "stacking": {
+       "mode": "none",
+       "group": "A"
+      }
+     }
+    },
+    "overrides": []
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 12,
+    "y": 64
+   }
+  },
+  {
+   "id": 26,
+   "type": "table",
+   "title": "Top user agents",
+   "description": "Most frequent User-Agent headers.",
+   "datasource": {
+    "type": "victoriametrics-logs-datasource",
+    "uid": "${DS_Logs}"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "victoriametrics-logs-datasource",
+      "uid": "${DS_Logs}"
+     },
+     "editorMode": "code",
+     "queryType": "instant",
+     "expr": "SYSLOG_IDENTIFIER:=nginx_access _HOSTNAME:$node | unpack_json fields (server, host, method, path, protocol, status, bytes_sent, request_time, upstream, upstream_status, upstream_response_time, referer_host, user_agent, client_net) | filter server:$domain $search | top 10 by (user_agent)"
+    }
+   ],
+   "transformations": [
+    {
+     "id": "extractFields",
+     "options": {
+      "source": "labels",
+      "format": "json",
+      "replace": false,
+      "keepTime": false
+     }
+    },
+    {
+     "id": "organize",
+     "options": {
+      "excludeByName": {
+       "Time": true,
+       "Line": true,
+       "id": true,
+       "labels": true,
+       "streams": true,
+       "streamId": true,
+       "tsNs": true,
+       "detected_level": true,
+       "level": true
+      },
+      "indexByName": {
+       "user_agent": 0,
+       "hits": 1
+      },
+      "renameByName": {
+       "user_agent": "User agent",
+       "hits": "Requests"
+      }
+     }
+    },
+    {
+     "id": "convertFieldType",
+     "options": {
+      "fields": {},
+      "conversions": [
+       {
+        "targetField": "Requests",
+        "destinationType": "number"
+       }
+      ]
+     }
+    },
+    {
+     "id": "sortBy",
+     "options": {
+      "sort": [
+       {
+        "field": "Requests",
+        "desc": true
+       }
+      ]
+     }
+    }
+   ],
+   "options": {
+    "showHeader": true,
+    "cellHeight": "sm",
+    "footer": {
+     "show": false
+    }
+   },
+   "fieldConfig": {
+    "defaults": {
+     "custom": {
+      "align": "auto",
+      "filterable": false
+     }
+    },
+    "overrides": [
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Requests"
+      },
+      "properties": [
+       {
+        "id": "unit",
+        "value": "short"
+       }
+      ]
+     }
+    ]
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 0,
+    "y": 72
+   }
+  },
+  {
+   "id": 27,
+   "type": "table",
+   "title": "Top referrers",
+   "description": "Sites that link to these domains (host of the Referer header only).",
+   "datasource": {
+    "type": "victoriametrics-logs-datasource",
+    "uid": "${DS_Logs}"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "victoriametrics-logs-datasource",
+      "uid": "${DS_Logs}"
+     },
+     "editorMode": "code",
+     "queryType": "instant",
+     "expr": "SYSLOG_IDENTIFIER:=nginx_access _HOSTNAME:$node | unpack_json fields (server, host, method, path, protocol, status, bytes_sent, request_time, upstream, upstream_status, upstream_response_time, referer_host, user_agent, client_net) | filter server:$domain $search | filter referer_host:* | top 10 by (referer_host)"
+    }
+   ],
+   "transformations": [
+    {
+     "id": "extractFields",
+     "options": {
+      "source": "labels",
+      "format": "json",
+      "replace": false,
+      "keepTime": false
+     }
+    },
+    {
+     "id": "organize",
+     "options": {
+      "excludeByName": {
+       "Time": true,
+       "Line": true,
+       "id": true,
+       "labels": true,
+       "streams": true,
+       "streamId": true,
+       "tsNs": true,
+       "detected_level": true,
+       "level": true
+      },
+      "indexByName": {
+       "referer_host": 0,
+       "hits": 1
+      },
+      "renameByName": {
+       "referer_host": "Referrer",
+       "hits": "Requests"
+      }
+     }
+    },
+    {
+     "id": "convertFieldType",
+     "options": {
+      "fields": {},
+      "conversions": [
+       {
+        "targetField": "Requests",
+        "destinationType": "number"
+       }
+      ]
+     }
+    },
+    {
+     "id": "sortBy",
+     "options": {
+      "sort": [
+       {
+        "field": "Requests",
+        "desc": true
+       }
+      ]
+     }
+    }
+   ],
+   "options": {
+    "showHeader": true,
+    "cellHeight": "sm",
+    "footer": {
+     "show": false
+    }
+   },
+   "fieldConfig": {
+    "defaults": {
+     "custom": {
+      "align": "auto",
+      "filterable": false
+     }
+    },
+    "overrides": [
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Requests"
+      },
+      "properties": [
+       {
+        "id": "unit",
+        "value": "short"
+       }
+      ]
+     }
+    ]
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 12,
+    "y": 72
+   }
+  },
+  {
+   "id": 28,
+   "type": "row",
+   "title": "Connections",
+   "collapsed": false,
+   "gridPos": {
+    "h": 1,
+    "w": 24,
+    "x": 0,
+    "y": 80
+   },
+   "panels": []
+  },
+  {
+   "id": 29,
+   "type": "stat",
+   "title": "Nginx status",
+   "description": "nginx_up of nginx-prometheus-exporter per node.",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "${DS_Metrics}"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "${DS_Metrics}"
+     },
+     "expr": "nginx_up{instance=~\"$node\"}",
+     "instant": true,
+     "range": false,
+     "legendFormat": "{{instance}}"
+    }
+   ],
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "colorMode": "background",
+    "graphMode": "none",
+    "textMode": "value_and_name",
+    "justifyMode": "center",
+    "orientation": "horizontal",
+    "showPercentChange": false
+   },
+   "fieldConfig": {
+    "defaults": {
+     "mappings": [
+      {
+       "type": "value",
+       "options": {
+        "0": {
+         "text": "Down",
+         "color": "red",
+         "index": 0
+        },
+        "1": {
+         "text": "Up",
+         "color": "green",
+         "index": 1
+        }
+       }
+      }
+     ],
+     "color": {
+      "mode": "thresholds"
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "red",
+        "value": null
+       },
+       {
+        "color": "green",
+        "value": 1
+       }
+      ]
+     },
+     "noValue": "No exporter"
+    },
+    "overrides": []
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 6,
+    "x": 0,
+    "y": 81
+   }
+  },
+  {
+   "id": 30,
+   "type": "timeseries",
+   "title": "Connections",
+   "description": "Client connections by state (stub_status).",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "${DS_Metrics}"
+   },
+   "interval": "1m",
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "${DS_Metrics}"
+     },
+     "expr": "nginx_connections_active{instance=~\"$node\"}",
+     "range": true,
+     "legendFormat": "{{instance}} active"
+    },
+    {
+     "refId": "B",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "${DS_Metrics}"
+     },
+     "expr": "nginx_connections_reading{instance=~\"$node\"}",
+     "range": true,
+     "legendFormat": "{{instance}} reading"
+    },
+    {
+     "refId": "C",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "${DS_Metrics}"
+     },
+     "expr": "nginx_connections_writing{instance=~\"$node\"}",
+     "range": true,
+     "legendFormat": "{{instance}} writing"
+    },
+    {
+     "refId": "D",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "${DS_Metrics}"
+     },
+     "expr": "nginx_connections_waiting{instance=~\"$node\"}",
+     "range": true,
+     "legendFormat": "{{instance}} waiting"
+    }
+   ],
+   "options": {
+    "legend": {
+     "showLegend": true,
+     "displayMode": "list",
+     "placement": "bottom"
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "custom": {
+      "drawStyle": "line",
+      "lineWidth": 1,
+      "fillOpacity": 10,
+      "showPoints": "never",
+      "spanNulls": false,
+      "stacking": {
+       "mode": "none",
+       "group": "A"
+      }
+     },
+     "decimals": 0
+    },
+    "overrides": []
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 9,
+    "x": 6,
+    "y": 81
+   }
+  },
+  {
+   "id": 31,
+   "type": "timeseries",
+   "title": "Accepted / dropped connections",
+   "description": "Rate of accepted connections and of connections nginx dropped (accepted minus handled: worker_connections or another resource limit was reached).",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "${DS_Metrics}"
+   },
+   "interval": "1m",
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "${DS_Metrics}"
+     },
+     "expr": "rate(nginx_connections_accepted{instance=~\"$node\"}[$__rate_interval])",
+     "range": true,
+     "legendFormat": "{{instance}} accepted"
+    },
+    {
+     "refId": "B",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "${DS_Metrics}"
+     },
+     "expr": "rate(nginx_connections_accepted{instance=~\"$node\"}[$__rate_interval]) - rate(nginx_connections_handled{instance=~\"$node\"}[$__rate_interval])",
+     "range": true,
+     "legendFormat": "{{instance}} dropped"
+    }
+   ],
+   "options": {
+    "legend": {
+     "showLegend": true,
+     "displayMode": "list",
+     "placement": "bottom"
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "cps",
+     "custom": {
+      "drawStyle": "line",
+      "lineWidth": 1,
+      "fillOpacity": 10,
+      "showPoints": "never",
+      "spanNulls": false,
+      "stacking": {
+       "mode": "none",
+       "group": "A"
+      }
+     }
+    },
+    "overrides": [
+     {
+      "matcher": {
+       "id": "byRegexp",
+       "options": "dropped$"
+      },
+      "properties": [
+       {
+        "id": "color",
+        "value": {
+         "mode": "fixed",
+         "fixedColor": "red"
+        }
+       }
+      ]
+     }
+    ]
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 9,
+    "x": 15,
+    "y": 81
+   }
+  },
+  {
+   "id": 32,
+   "type": "row",
+   "title": "Logs",
+   "collapsed": false,
+   "gridPos": {
+    "h": 1,
+    "w": 24,
+    "x": 0,
+    "y": 89
+   },
+   "panels": []
+  },
+  {
+   "id": 33,
+   "type": "logs",
+   "title": "Access log",
+   "description": "Requests, newest first: status, method, Host header + path, request time. Expand a line for all fields.",
+   "datasource": {
+    "type": "victoriametrics-logs-datasource",
+    "uid": "${DS_Logs}"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "victoriametrics-logs-datasource",
+      "uid": "${DS_Logs}"
+     },
+     "editorMode": "code",
+     "queryType": "instant",
+     "expr": "SYSLOG_IDENTIFIER:=nginx_access _HOSTNAME:$node | unpack_json fields (server, host, method, path, protocol, status, bytes_sent, request_time, upstream, upstream_status, upstream_response_time, referer_host, user_agent, client_net) | filter server:$domain $search | format \"<status> <method> <host><path> <request_time>s\" as _msg"
+    }
+   ],
+   "options": {
+    "showTime": true,
+    "showLabels": false,
+    "showCommonLabels": false,
+    "wrapLogMessage": true,
+    "prettifyLogMessage": false,
+    "enableLogDetails": true,
+    "dedupStrategy": "none",
+    "sortOrder": "Descending"
+   },
+   "gridPos": {
+    "h": 12,
+    "w": 24,
+    "x": 0,
+    "y": 90
+   }
+  },
+  {
+   "id": 34,
+   "type": "logs",
+   "title": "Error log",
+   "description": "nginx error log: failed upstream connections, limit_req rejections and the like. Opt-in (see HOWTO): nginx writes the full client address into these lines, so it is off by default. The Filter variable does not apply here.",
+   "datasource": {
+    "type": "victoriametrics-logs-datasource",
+    "uid": "${DS_Logs}"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "victoriametrics-logs-datasource",
+      "uid": "${DS_Logs}"
+     },
+     "editorMode": "code",
+     "queryType": "instant",
+     "expr": "SYSLOG_IDENTIFIER:=nginx_error _HOSTNAME:$node"
+    }
+   ],
+   "options": {
+    "showTime": true,
+    "showLabels": false,
+    "showCommonLabels": false,
+    "wrapLogMessage": true,
+    "prettifyLogMessage": false,
+    "enableLogDetails": true,
+    "dedupStrategy": "none",
+    "sortOrder": "Descending"
+   },
+   "gridPos": {
+    "h": 10,
+    "w": 24,
+    "x": 0,
+    "y": 102
+   }
+  }
+ ]
+}

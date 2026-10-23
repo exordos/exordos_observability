@@ -21,7 +21,7 @@ conventions, see [`AGENTS.md`](AGENTS.md).
 - [Dashboard source kinds](#dashboard-source-kinds)
 - [How to wire Victoria + Grafana together](#how-to-wire-victoria--grafana-together)
 - [How to reference resources from another manifest](#how-to-reference-resources-from-another-manifest)
-- [How to get Nginx metrics into the dashboard](#how-to-get-nginx-metrics-into-the-dashboard)
+- [Nginx dashboard](#nginx-dashboard)
 - [Element status dashboard](#element-status-dashboard)
 - [Compute dashboard](#compute-dashboard)
 
@@ -669,37 +669,56 @@ Two details that are easy to get wrong:
 
 ---
 
-## How to get Nginx metrics into the dashboard
+## Nginx dashboard
 
 The `nginx_dashboard` element (see `exordos/manifests/nginx_dashboard.yaml.j2`)
-only provides the **visualization** — the community NGINX exporter dashboard
-(grafana.com [#12708](https://grafana.com/grafana/dashboards/12708)) bound
-to the shared Grafana instance under the **Nginx** folder. For its panels to
-show anything, the `nginx_*` metrics (`nginx_up`, `nginx_connections_*`,
-`nginx_http_requests_total`) must already be present in VictoriaMetrics.
+binds the **Nginx** dashboard (`dashboards/nginx.json`, uid `exordos-nginx`)
+to the shared Grafana instance under the **Nginx** folder. It only provides
+the **visualization**: the data comes from the machines running Nginx, and
+this section covers getting it there.
 
-This section covers getting those metrics from a machine running Nginx into
-the platform's VictoriaMetrics. The data path is:
+The dashboard has two data sources:
+
+| Data | Panels | Needed |
+|---|---|---|
+| Access log in VictoriaLogs | Overview, Traffic, Errors, Performance, Clients, Access log | yes |
+| `nginx-prometheus-exporter` metrics in VictoriaMetrics | Connections | yes |
+| Error log in VictoriaLogs | Error log | opt-in |
+| Client network field of the access log | Client networks, Top client networks | opt-in |
+
+The access log is what answers "which domain, which errors, how slow, who":
+the exporter only reads `stub_status`, a handful of server-wide counters
+without domains, status codes or clients. The two opt-ins carry client
+addresses and are off by default, see [What gets logged](#what-gets-logged).
+
+The data paths are:
 
 ```
+nginx access/error log → syslog (/dev/log) → journald → systemd-journal-upload
+    → vlagent (:9429) → http://<OBS_HOST>:8428/insert/native (vmauth, anonymous write)
+    → VictoriaLogs → Grafana (VictoriaLogs datasource)
+
 nginx stub_status → nginx-prometheus-exporter (:9113) → vmagent (scrape)
     → remote_write http://<OBS_HOST>:8428/api/v1/write (vmauth, anonymous write)
     → VictoriaMetrics → Grafana (prometheus datasource)
 ```
 
-VictoriaMetrics does **not** scrape on its own — everything is pushed to the
-vmauth write endpoint on port `8428`, which is open for anonymous writes
-(see the `unauthorized_user` block in the Victoria infra config). The agent
-that does the scraping and pushing is **vmagent**.
+VictoriaMetrics and VictoriaLogs do **not** pull anything on their own:
+everything is pushed to the vmauth write endpoint on port `8428`, which is
+open for anonymous writes (see the `unauthorized_user` block in the Victoria
+infra config). The agents that push are **vlagent** (logs) and **vmagent**
+(metrics).
 
-> **`vlagent` is not needed here.** `vlagent` ships *logs* to VictoriaLogs;
-> the Nginx dashboard is metrics-only. Install `vlagent` separately only if
-> you also want to centralize this machine's logs.
+Nginx writes its log lines to syslog, so they land in journald with
+`SYSLOG_IDENTIFIER=nginx_access` (or `nginx_error`) and the node's hostname as
+`_HOSTNAME`. The dashboard's **Node** variable lists these hostnames; they
+must match the `instance` label of the exporter metrics, which is why the
+scrape job below sets `instance` to the hostname.
 
 ### Prerequisites
 
-- The `observability` element is deployed, so a VictoriaMetrics backend exists.
-- The machine can reach the VictoriaMetrics write endpoint. The backend host
+- The `observability` element is deployed, so the Victoria backend exists.
+- The machine can reach the Victoria write endpoint. The backend host
   is called `OBS_HOST` and defaults to the realm-internal DNS name
   `victoria-storage.local.genesis-core.tech`:
   - **Inside the realm** — that name resolves; the default works as-is.
@@ -707,14 +726,15 @@ that does the scraping and pushing is **vmagent**.
     reachable address of the Victoria DP node. The instance's
     `metrics_endpoint` is `http://<ip>:8428`, so `OBS_HOST` is that `<ip>`
     (or a DNS name that resolves to it).
+- Nginx runs under systemd with journald owning `/dev/log` (the default on
+  Ubuntu and Debian).
 
 ### Part A — the machine already runs the Exordos base image
 
-Nodes built from `eci_base` (`exordos-base`) already ship `vmagent`
-(`/usr/bin/vmagent`), `vlagent`, and `node_exporter`, with a scrape config
-template at `/etc/exordos_observability/vmagent_scrape.yml.tpl` and a
-`exordos-vmagent.service` unit that already remote-writes to `OBS_HOST:8428`.
-You only need to add a Nginx scrape job.
+Nodes built from `eci_base` (`exordos-base`) already ship `vlagent`,
+`systemd-journal-upload`, `vmagent` and `node_exporter`. journald is
+already shipped to VictoriaLogs, so the logs need nothing beyond the Nginx
+configuration below. For the metrics you only add a Nginx scrape job.
 
 1. Add the Nginx job to the **template** file
    `/etc/exordos_observability/vmagent_scrape.yml.tpl` (append under
@@ -733,26 +753,34 @@ You only need to add a Nginx scrape job.
    > `ExecStartPre` re-renders `vmagent_scrape.yml` from the `.tpl` on every
    > start (`sed "s/__HOSTNAME__/$(hostname)/" …`), so any direct edit to the
    > rendered file is lost on the next restart/reboot. The `instance:
-   > "__HOSTNAME__"` label matches the dashboard's
-   > `label_values(nginx_up, instance)` variable — same convention as the
-   > `node_exporter` job — so the node shows up in the dashboard's `$instance`
-   > dropdown.
+   > "__HOSTNAME__"` label is the node's hostname, the same value journald
+   > writes as `_HOSTNAME`, so the logs and the metrics of a node meet in the
+   > dashboard's **Node** variable.
 
-2. Continue with [Set up Nginx and the exporter](#set-up-nginx-and-the-exporter),
-   then [Apply and verify](#apply-and-verify).
+2. Continue with [Set up Nginx logging](#set-up-nginx-logging),
+   [Set up the exporter](#set-up-the-exporter), then
+   [Apply and verify](#apply-and-verify).
 
 ### Part B — the machine has no agent (bare host)
 
-Install `vmagent` from scratch, reusing the `eci_base` file layout.
+Install `vmagent`, `vlagent` and `systemd-journal-upload` from scratch,
+reusing the `eci_base` file layout.
 
-1. Install the `vmagent` binary (pinned to the version the base image uses):
+1. Install the `vmagent` and `vlagent` binaries (pinned to the versions the
+   base image uses) and `systemd-journal-upload`:
 
    ```bash
    VM_VERSION="v1.131.0"
+   VL_VERSION="v1.51.0"
    curl -fsSL -o /tmp/vmutils.tar.gz \
      "https://github.com/VictoriaMetrics/VictoriaMetrics/releases/download/${VM_VERSION}/vmutils-linux-amd64-${VM_VERSION}.tar.gz"
+   curl -fsSL -o /tmp/vlutils.tar.gz \
+     "https://github.com/VictoriaLogs/VictoriaLogs/releases/download/${VL_VERSION}/vlutils-linux-amd64-${VL_VERSION}.tar.gz"
    tar -xzf /tmp/vmutils.tar.gz -C /tmp
+   tar -xzf /tmp/vlutils.tar.gz -C /tmp
    sudo install -m 0755 /tmp/vmagent-prod /usr/bin/vmagent
+   sudo install -m 0755 /tmp/vlagent-prod /usr/bin/vlagent
+   sudo apt-get install -y systemd-journal-remote   # ships systemd-journal-upload
    ```
 
 2. Create the config directory and the backend host file
@@ -763,9 +791,10 @@ Install `vmagent` from scratch, reusing the `eci_base` file layout.
    ```
 
    ```ini
-   # Observability backend host (VictoriaMetrics). Set to a reachable address.
-   # Inside the realm the default resolves; outside it, use the Victoria DP
-   # node IP/DNS from the instance's metrics_endpoint (http://<ip>:8428).
+   # Observability backend host (VictoriaMetrics + VictoriaLogs). Set to a
+   # reachable address. Inside the realm the default resolves; outside it,
+   # use the Victoria DP node IP/DNS from the instance's metrics_endpoint
+   # (http://<ip>:8428).
    OBS_HOST=victoria-storage.local.genesis-core.tech
    ```
 
@@ -810,18 +839,202 @@ Install `vmagent` from scratch, reusing the `eci_base` file layout.
    WantedBy=multi-user.target
    ```
 
-   > The base-image unit also waits for `OBS_HOST` to resolve before
+5. Create the systemd unit `/etc/systemd/system/exordos-vlagent.service`:
+
+   ```ini
+   [Unit]
+   Description=Exordos vlagent (VictoriaLogs logs agent)
+   After=network-online.target
+   Wants=network-online.target
+
+   [Service]
+   Type=simple
+   Environment=OBS_HOST=victoria-storage.local.genesis-core.tech
+   EnvironmentFile=-/etc/exordos_observability/observability.conf
+   ExecStart=/usr/bin/vlagent \
+       -remoteWrite.url=http://${OBS_HOST}:8428/insert/native \
+       -httpListenAddr=127.0.0.1:9429
+   Restart=on-failure
+   RestartSec=5s
+   TimeoutStopSec=10
+   NoNewPrivileges=true
+   ProtectHome=true
+   PrivateTmp=true
+
+   [Install]
+   WantedBy=multi-user.target
+   ```
+
+   > The base-image units also wait for `OBS_HOST` to resolve before
    > starting (`ExecStartPre=…/exordos-observability-wait-dns.sh`). It is
    > omitted here — `Restart=on-failure` retries until DNS is up.
 
-5. Enable and start it:
+6. Point `systemd-journal-upload` at vlagent: `/etc/systemd/journal-upload.conf`
+
+   ```ini
+   [Upload]
+   URL=http://127.0.0.1:9429/insert/journald
+   ```
+
+   and start it after vlagent with a drop-in
+   `/etc/systemd/system/systemd-journal-upload.service.d/exordos-vlagent.conf`:
+
+   ```ini
+   [Unit]
+   After=exordos-vlagent.service
+   Wants=exordos-vlagent.service
+   ```
+
+   This ships the whole journal of the machine, not only Nginx, the same as
+   on the base image.
+
+7. Enable and start them:
 
    ```bash
    sudo systemctl daemon-reload
-   sudo systemctl enable --now exordos-vmagent
+   sudo systemctl enable --now exordos-vmagent exordos-vlagent systemd-journal-upload
    ```
 
-### Set up Nginx and the exporter
+### Set up Nginx logging
+
+These steps are the same for Part A and Part B.
+
+1. Create `/etc/nginx/conf.d/exordos-logging.conf`. Files in `conf.d/` are
+   included in the `http` block by the stock `nginx.conf` of Ubuntu and
+   Debian:
+
+   ```nginx
+   # Exordos Nginx dashboard: access log as JSON to journald
+   # (SYSLOG_IDENTIFIER=nginx_access), shipped to VictoriaLogs.
+
+   # Path without the query string: tokens and personal data often live in it.
+   map $request_uri $exordos_path {
+       "~^(?<p>[^?]*)"  $p;
+   }
+
+   # Referer reduced to its host.
+   map $http_referer $exordos_referer_host {
+       "~^[a-zA-Z][a-zA-Z0-9+.-]*://(?<h>[^/:?#]+)"  $h;
+       default                                     "";
+   }
+
+   # Client network: off by default, nothing about the client is logged.
+   # See "Optional: client networks".
+   map $remote_addr $exordos_client_net {
+       default "";
+   }
+
+   log_format exordos_json escape=json
+       '{"server":"$server_name","host":"$host","method":"$request_method",'
+       '"path":"$exordos_path","protocol":"$server_protocol","status":"$status",'
+       '"bytes_sent":"$body_bytes_sent","request_time":"$request_time",'
+       '"upstream":"$upstream_addr","upstream_status":"$upstream_status",'
+       '"upstream_response_time":"$upstream_response_time",'
+       '"referer_host":"$exordos_referer_host","user_agent":"$http_user_agent",'
+       '"client_net":"$exordos_client_net"}';
+
+   access_log syslog:server=unix:/dev/log,tag=nginx_access,nohostname exordos_json;
+   ```
+
+   This `access_log` adds to the `access_log` of the stock `nginx.conf`, so
+   the local file log keeps working. A `server` or `location` that sets its
+   own `access_log` does not inherit it: add the same `access_log` line
+   there.
+
+   The dashboard groups by `server` (the `server_name` the request matched)
+   rather than by `host` (the `Host` header): an attacker controls the
+   header, so grouping by it would give every random value its own series.
+   A `server` block without `server_name` logs an empty `server`.
+
+2. Lift the journald rate limit for Nginx. By default journald drops the
+   messages of a unit above a burst of about 10000 per 30 seconds
+   (`RateLimitIntervalSec`/`RateLimitBurst` of `journald.conf`), which a busy
+   Nginx reaches at a few hundred requests per second — and an attack
+   certainly does. Create
+   `/etc/systemd/system/nginx.service.d/exordos-logging.conf`:
+
+   ```ini
+   [Service]
+   LogRateLimitIntervalSec=0
+   ```
+
+   The setting is applied when the unit starts, so Nginx needs a restart
+   (a reload is not enough):
+
+   ```bash
+   sudo systemctl daemon-reload
+   sudo systemctl restart nginx
+   ```
+
+   Every request now goes through the journal. On a high-traffic machine
+   also check that `SystemMaxUse` in `journald.conf` leaves room for a few
+   minutes of upload backlog: lines rotated out of the journal before
+   `systemd-journal-upload` sent them are lost.
+
+3. Check and reload:
+
+   ```bash
+   sudo nginx -t && sudo systemctl reload nginx
+   journalctl -t nginx_access -n 3 --no-pager   # sanity check
+   ```
+
+#### Optional: client networks
+
+To fill the client network panels (where an attack comes from), replace the
+`$exordos_client_net` map with this one. It logs the network of the client,
+`/24` for IPv4 and `/64` for IPv6, never the full address:
+
+```nginx
+map $remote_addr $exordos_client_net {
+    "~^(?<n>\d+\.\d+\.\d+)\.\d+$"                         $n.0/24;
+    "~^::ffff:(?<n>\d+\.\d+\.\d+)\.\d+$"                  $n.0/24;
+    "~*^(?<n>[0-9a-f]+:[0-9a-f]+:[0-9a-f]+:[0-9a-f]+):"   $n::/64;
+    "~*^(?<n>[0-9a-f]*(:[0-9a-f]+){0,3})::"               $n::/64;
+    default                                                "";
+}
+```
+
+An IPv6 address whose `::` falls inside the first four groups and hides a
+non-zero group of the prefix (`2001::1:2:3:4:5`) is logged with a shorter
+prefix (`2001::/64`): the host part never leaks, the network is coarser.
+
+Behind a load balancer or proxy `$remote_addr` is the proxy, not the client.
+Configure the `real_ip` module (`set_real_ip_from` + `real_ip_header`) so
+that it holds the client address.
+
+#### Optional: error log
+
+To fill the **Error log** panel (failed upstream connections, `limit_req`
+rejections), add to `exordos-logging.conf`:
+
+```nginx
+error_log /var/log/nginx/error.log;
+error_log syslog:server=unix:/dev/log,tag=nginx_error,nohostname warn;
+```
+
+An `error_log` in the `http` block replaces the one inherited from the main
+level, hence the first line keeps the local file. Nginx writes the **full**
+client address into its error lines (`client: 203.0.113.77`), and the
+client-network mask does not apply to them.
+
+#### What gets logged
+
+- By default: domain, method, path **without the query string**, status,
+  sizes and times, upstream address and status, **host of the referer**
+  only, user agent. Nothing that identifies the client's address.
+- With the client networks opt-in: the client's `/24` (IPv4) or `/64`
+  (IPv6) network. A truncated address can still be personal data, together
+  with the time, user agent and path of the request; whether you may store
+  it is your call (GDPR, 152-FZ).
+- With the error log opt-in: full client addresses in the error lines.
+- How long all of it is kept is the `retention_period` of the Victoria
+  instance, one value for every log of the platform in it.
+
+Each request is one log line of about 400 bytes before compression, also
+during an attack. To keep noise out, give the `access_log` an `if=`
+condition, for example to skip health checks.
+
+### Set up the exporter
 
 These steps are the same for Part A and Part B.
 
@@ -894,30 +1107,39 @@ These steps are the same for Part A and Part B.
    sudo systemctl restart exordos-vmagent
    ```
 
-2. Confirm the metrics landed in VictoriaMetrics. The query path on
-   `:8428` requires the `grafana-reader` Basic Auth user — anonymous
-   access is write-only, so an unauthenticated query returns `401` even
-   when ingestion works. The password is generated by the manifest and
-   stored in the Core Secret Manager as `vmauth_reader_password`:
+2. Confirm the data landed. The query paths on `:8428` require the
+   `grafana-reader` Basic Auth user — anonymous access is write-only, so an
+   unauthenticated query returns `401` even when ingestion works. The
+   password is generated by the manifest and stored in the Core Secret
+   Manager as `vmauth_reader_password`:
 
    ```bash
    # Fetch the generated read password via the Core API:
    curl -s -u "<core-admin>:<password>" \
      "http://core.local.genesis-core.tech/api/core/v1/secret/passwords/?name=vmauth_reader_password"
 
+   # Metrics:
    curl -s -u "grafana-reader:<password>" \
      "http://<OBS_HOST>:8428/api/v1/query?query=nginx_up"
+
+   # Access log:
+   curl -s -u "grafana-reader:<password>" \
+     "http://<OBS_HOST>:8428/select/logsql/query" \
+     --data-urlencode 'query=_time:5m SYSLOG_IDENTIFIER:=nginx_access | limit 3'
    ```
 
-   A non-empty result with your node's `instance` label means the pipeline is
-   working.
+   A non-empty result with your node's `instance` label (metrics) and
+   `_HOSTNAME` (logs) means both pipelines work.
 
-3. Open Grafana → **Nginx** folder → the *NGINX exporter* dashboard, and pick
-   the node in the `$instance` dropdown.
+3. Open Grafana → **Nginx** folder → the *Nginx* dashboard and pick the node
+   in the **Node** dropdown. The **Filter** box takes a LogsQL filter over
+   the access log fields (`status:502`, `path:"/login"`,
+   `client_net:="198.51.100.0/24"`); clicking a domain or a client network in
+   the tables sets it for you.
 
-> **Note:** This is per-machine, host-local configuration. The scrape config
-> lives on the node and is rendered locally by the agent — it is not
-> delivered by the control plane.
+> **Note:** This is per-machine, host-local configuration. The Nginx config,
+> the scrape config and the agents live on the node — they are not delivered
+> by the control plane.
 
 ---
 
