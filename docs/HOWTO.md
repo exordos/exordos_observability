@@ -734,7 +734,15 @@ scrape job below sets `instance` to the hostname.
     rather than the open internet, since the logs and metrics can be read or
     altered on the way.
 - Nginx runs under systemd with journald owning `/dev/log` (the default on
-  Ubuntu and Debian).
+  Ubuntu and Debian). An Nginx in a container writes to its own `/dev/log`,
+  not to the host journal, and is not covered here.
+
+To tell which part below applies:
+
+```bash
+systemctl is-enabled exordos-vlagent systemd-journal-upload   # both enabled → Part A, else Part B
+readlink -f /dev/log      # /run/systemd/journal/dev-log → journald owns it
+```
 
 ### Part A — the machine already runs the Exordos base image
 
@@ -946,7 +954,13 @@ These steps are the same for Part A and Part B.
    This `access_log` adds to the `access_log` of the stock `nginx.conf`, so
    the local file log keeps working. A `server` or `location` that sets its
    own `access_log` does not inherit it: add the same `access_log` line
-   there.
+   there. To find them:
+
+   ```bash
+   grep -rn "access_log" /etc/nginx/sites-enabled/ /etc/nginx/conf.d/
+   ```
+
+   Every match other than `access_log off` and the line above needs it.
 
    The dashboard groups by `server` (the `server_name` the request matched)
    rather than by `host` (the `Host` header): an attacker controls the
@@ -982,7 +996,11 @@ These steps are the same for Part A and Part B.
 
    ```bash
    sudo nginx -t && sudo systemctl reload nginx
-   journalctl -t nginx_access -n 3 --no-pager   # sanity check
+   curl -s -o /dev/null http://127.0.0.1/          # any request through Nginx
+   journalctl -t nginx_access -n 3 --no-pager      # a JSON line per request
+   systemctl show nginx -p LogRateLimitIntervalUSec   # LogRateLimitIntervalUSec=0
+   journalctl -u systemd-journald --since -10min | grep -i suppressed   # empty
+   systemctl is-active systemd-journal-upload       # active
    ```
 
 #### Optional: client networks
@@ -1147,6 +1165,17 @@ These steps are the same for Part A and Part B.
    the access log fields (`status:502`, `path:"/login"`,
    `client_net:="198.51.100.0/24"`); clicking a domain or a client network in
    the tables sets it for you.
+
+### Troubleshooting
+
+| Symptom | Cause |
+|---|---|
+| The node is missing from **Node** | The access log does not reach VictoriaLogs: walk the checks of [Set up Nginx logging](#set-up-nginx-logging) step 3 in order, starting with `journalctl -t nginx_access` |
+| Logs arrive, but **Nginx status** says *No exporter* and Connections is empty | The `instance` label of the metrics differs from the hostname (`_HOSTNAME`), or the exporter is not scraped |
+| One site never shows up | Its `server` sets its own `access_log` (step 1) |
+| Gaps in the graphs under load, `Suppressed … messages` in the journald log | The journald rate limit still applies (step 2): `LogRateLimitIntervalUSec` is not `0` or Nginx was reloaded instead of restarted |
+| A domain shows up as an empty name | Its `server` has no `server_name` |
+| Client network panels stay empty | Expected without the client networks opt-in; with it, check the `map` replaced the default one |
 
 > **Note:** This is per-machine, host-local configuration. The Nginx config,
 > the scrape config and the agents live on the node — they are not delivered
