@@ -726,6 +726,13 @@ scrape job below sets `instance` to the hostname.
     reachable address of the Victoria DP node. The instance's
     `metrics_endpoint` is `http://<ip>:8428`, so `OBS_HOST` is that `<ip>`
     (or a DNS name that resolves to it).
+
+    vmauth on `:8428` speaks plain HTTP (TLS is planned, see
+    [`DESIGN-victoria-auth.md`](DESIGN-victoria-auth.md)), and writes are
+    anonymous. Inside the realm the traffic stays on the platform network;
+    from outside it, route it over a trusted link (VPN or a private network)
+    rather than the open internet, since the logs and metrics can be read or
+    altered on the way.
 - Nginx runs under systemd with journald owning `/dev/log` (the default on
   Ubuntu and Debian).
 
@@ -1029,6 +1036,10 @@ client-network mask does not apply to them.
 - With the error log opt-in: full client addresses in the error lines.
 - How long all of it is kept is the `retention_period` of the Victoria
   instance, one value for every log of the platform in it.
+- Who can read it: everyone who can open the shared Grafana, since its
+  VictoriaLogs datasource reaches the whole journal of every node. Full
+  client addresses are already there without these opt-ins, for example in
+  the sshd lines (`Accepted publickey … from <ip>`).
 
 Each request is one log line of about 400 bytes before compression, also
 during an attack. To keep noise out, give the `access_log` an `if=`
